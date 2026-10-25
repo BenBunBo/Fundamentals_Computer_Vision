@@ -1,0 +1,760 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SIFT &amp; ORB — Computer Vision (trang giải thích tương tác)</title>
+<meta name="description" content="Hiểu SIFT và ORB tới từng bước、từng ma trận: pipeline tổng quan, Bước 0 tiền xử lý, DoG thay LoG, localization, Harris, intensity centroid, rBRIEF 256-bit và con số 205,590.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<noscript><p style="color:#fff;font-family:Arial;padding:2em">Trang này cần JavaScript để chạy các minh hoạ tương tác (nội dung chữ vẫn đọc được khi cuộn).</p></noscript>
+
+<!-- ================= HERO ================= -->
+<header id="hero">
+  <div class="hero-inner">
+    <p class="kicker light">COMPUTER VISION · LOCAL FEATURES</p>
+    <h1 class="mega"><span class="c-blue">SIFT</span> <span class="c-white">&amp;</span> <span class="c-orange">ORB</span></h1>
+    <p class="lead">Feature Detection &amp; Description — hai giải thuật « đôi mắt » của máy tính, giải thích tới từng bước、từng ma trận.</p>
+    <div class="chips">
+      <span class="chip b">SIFT — Scale-Invariant Feature Transform (2004)</span>
+      <span class="chip o">ORB — Oriented FAST &amp; Rotated BRIEF (2011)</span>
+    </div>
+    <p class="footnote light">Mọi minh hoạ được tính trực tiếp trong trình duyệt từ thuật toán thật · <b>di chuột hoặc bấm</b> vào các <span class="term light" data-term="descriptor">thuật ngữ có gạch chấm</span> để xem giải thích — hộp hiện ra có thể rê chuột vào trong và bấm « Xem thêm →» · mỗi giải thuật có <b>pipeline tổng quan</b> rồi bấm mở <b>chi tiết từng bước</b>.</p>
+  </div>
+</header>
+
+<!-- ================= NAV ================= -->
+<nav id="topnav">
+  <div class="nav-inner">
+    <span class="nav-brand">SIFT&nbsp;&amp;&nbsp;ORB</span>
+    <a href="#tongquan">Tổng quan</a>
+    <a href="#buoc0">Bước 0 · Tiền xử lý</a>
+    <a href="#sift">SIFT</a>
+    <a href="#orb">ORB</a>
+    <a href="#sosanh">So sánh</a>
+    <a href="#ungdung">Ứng dụng</a>
+    <a href="#tailieu">Tài liệu</a>
+  </div>
+</nav>
+
+<main>
+
+<!-- ================= TỔNG QUAN ================= -->
+<section class="sec" id="tongquan">
+  <p class="kicker navy">TỔNG QUAN</p>
+  <h2 class="h1">Local feature là gì và vì sao cần nó?</h2>
+  <div class="grid-3">
+    <div class="card"><b class="c-blue">Keypoint = điểm « đáng nhớ »</b><p>Góc, đốm (blob), mẫu ảnh cục bộ — nhìn phát nhận ra ngay</p></div>
+    <div class="card"><b class="c-orange">Chống biến đổi hình học &amp; sáng</b><p>Vẫn tìm lại được khi ảnh xoay, phóng / thu, đổi sáng, đổi góc nhìn</p></div>
+    <div class="card"><b class="c-green">Nền của nhiều bài toán CV</b><p>Matching, panorama, nhận diện vật thể, SLAM, 3D reconstruction</p></div>
+  </div>
+  <figure class="imgcard center">
+    <img src="img/01_feature_concept.jpg" alt="Ba vùng ảnh: phẳng, cạnh, góc">
+    <figcaption>Ba vùng lấy từ ảnh mẫu: vùng phẳng « vô danh » — cạnh vẫn mơ hồ khi dịch chuyển — góc thì định danh duy nhất</figcaption>
+  </figure>
+
+  <h3 class="h3">Mọi giải thuật feature đều đi qua 3 giai đoạn</h3>
+  <p class="hint">Nhấn <b>▶ Tự động</b> hoặc <b>Sau ›</b> để xem một bức ảnh đi lần lượt qua các trạm — kết quả ở mỗi trạm là ảnh chạy thật, không phải vẽ tay.</p>
+  <div class="widget" id="w-pipeline"></div>
+  <div class="grid-3">
+    <div><b class="c-blue">① DETECT — tìm ở đâu</b><p>Quét ảnh, chọn các điểm « đặc biệt »: corner, blob. SIFT dùng DoG, ORB dùng FAST.</p></div>
+    <div><b class="c-green">② DESCRIBE — trông như thế nào</b><p>Mã hoá vùng lân cận thành vector: SIFT 128 số thực, ORB 256 bit nhị phân.</p></div>
+    <div><b class="c-orange">③ MATCH — ghép cặp ra sao</b><p>So khoảng cách vector (Euclidean / Hamming) giữa các ảnh để tìm điểm tương ứng.</p></div>
+  </div>
+</section>
+
+<!-- ================= BƯỚC 0 · TIỀN XỬ LÝ ================= -->
+<section class="sec alt" id="buoc0">
+  <p class="kicker navy">BƯỚC 0 · TIỀN XỬ LÝ</p>
+  <h2 class="h1">Trước khi vào giải thuật: ảnh màu → ảnh xám</h2>
+  <div class="callout blue">
+    <b>Câu hỏi thường gặp: SIFT / ORB có bước « chuyển trắng đen » hay « chuẩn hoá » trước không?</b>
+    <small>CÓ — cả hai giải thuật đều chạy trên <b>ảnh xám</b> I(x, y) — mỗi pixel chỉ còn 1 số cường độ sáng. Khi bạn đưa ảnh màu vào <code>cv2.SIFT_create()</code> hay <code>cv2.ORB_create()</code>, OpenCV <b>tự chuyển màu → xám bên trong</b> rồi mới detect. Ảnh đã xám từ đầu thì bước này coi như xong.</small>
+  </div>
+  <div class="two-col">
+    <div class="col-side">
+      <ul class="bullets">
+        <li><b>Vì sao phải về xám?</b> Toàn bộ phép tính của 2 giải thuật — <span class="term" data-term="gradient">gradient</span>, so sáng tối, moment — chỉ có nghĩa trên 1 số / pixel. Màu là 3 số (R, G, B) không có thứ tự « sáng hơn » tự nhiên.</li>
+        <li><b>Bất biến màu sắc:</b> cùng một cảnh dưới đèn vàng / đèn trắng cho 2 ảnh xám gần giống nhau ⇒ feature ổn định hơn.</li>
+        <li><b>Nhẹ hơn 3×</b> dữ liệu: giảm từ H×W×3 xuống H×W.</li>
+        <li>Công thức là <span class="term" data-term="luma">luma</span> chuẩn ITU-R BT.601 — trọng số xanh lá cao nhất vì mắt người nhạy màu này nhất.</li>
+      </ul>
+      <div class="callout blue formula">
+        <b>Y = 0.299·R + 0.587·G + 0.114·B</b>
+        <small>đúng công thức <code>cvtColor(BGR2GRAY)</code> trong OpenCV và <code>loadSampleGray()</code> mà mọi widget của trang này dùng</small>
+      </div>
+    </div>
+    <div>
+      <div class="tensor-box">
+        <div class="tb-title">📐 Ma trận &amp; tensor ở Bước 0</div>
+        <div class="tb-grid">
+          <div class="tb-item"><b>I<sub>color</sub> ∈ ℝ^(H×W×3)</b><p>ảnh màu — tensor 3 chiều: mỗi pixel là 1 vector [R, G, B]. Ảnh mẫu: 1000×563×3 = 1.689.000 số</p></div>
+          <div class="tb-item"><b>I ∈ ℝ^(H×W)</b><p>ảnh xám đầu ra — ma trận 2 chiều, mỗi phần tử 1 giá trị 0..255 (float). 1000×563 = 563.000 số</p></div>
+          <div class="tb-item"><b>Kernel tích chập</b><p>các bước sau nhân I với <span class="term" data-term="kernel">kernel</span> nhỏ (Gaussian 5×5, đạo hàm…) bằng phép <span class="term" data-term="conv">tích chập</span> — xem bảng số thật ở Bước 1</p></div>
+        </div>
+      </div>
+      <div class="tb-table-wrap">
+        <table class="cmp tb-table">
+          <tr><th>Khâu</th><th class="h-sift">SIFT</th><th class="h-orb">ORB</th></tr>
+          <tr><td>Ảnh đầu vào</td><td colspan="2" style="text-align:center">ảnh xám Y = 0.299R + 0.587G + 0.114B (OpenCV tự convert nếu vào màu)</td></tr>
+          <tr><td>Làm mượt</td><td>Gaussian blur σ = 1.6·k^s — <i>chính là</i> scale-space của Bước 1</td><td>box 5×5 (qua <span class="term" data-term="integral">integral image</span>) trước mỗi phép so sáng tối của rBRIEF</td></tr>
+          <tr><td>Đa tỉ lệ</td><td>pyramid Gaussian, thu ½ mỗi octave</td><td>pyramid thu nhỏ ~1.2× mỗi level</td></tr>
+          <tr><td>Chuẩn hoá descriptor</td><td>vector 128: chia ‖v‖ → kẹp ≤ 0.2 → chia lại (Bước 4)</td><td>không cần — bit so sánh <i>tương đối</i> sáng hơn / tối hơn</td></tr>
+          <tr><td>Kiểu dữ liệu</td><td colspan="2" style="text-align:center">Float32 0..255 nội bộ; descriptor mới là đầu ra chuẩn hoá</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="widget" id="w-gray"></div>
+</section>
+
+<!-- ================= PHẦN 1 · SIFT ================= -->
+<section class="sec" id="sift">
+  <div class="sec-head dark-band">
+    <div class="sec-head-inner">
+      <div>
+        <p class="kicker">PHẦN 1 / 2</p>
+        <h2 class="mega c-blue">SIFT</h2>
+        <p class="sub">Scale-Invariant Feature Transform</p>
+        <p class="lead">David G. Lowe — ICCV 1999 &amp; IJCV 2004. « Gold standard » của feature detection: chính xác, bất biến xoay / scale / sáng trong nhiều năm.</p>
+        <p class="links light">📄 <a href="https://www.cs.ubc.ca/~lowe/papers/ijcv04.pdf" target="_blank" rel="noopener">Paper gốc (Lowe, IJCV 2004)</a> · 🌐 <a href="https://www.cs.ubc.ca/~lowe/keypoints/" target="_blank" rel="noopener">Trang SIFT của tác giả</a></p>
+      </div>
+      <figure class="imgcard">
+        <img src="img/07_sift_matching.jpg" alt="SIFT match hai ảnh biến đổi">
+        <figcaption>SIFT match 2 ảnh: phải đã xoay 35° + thu nhỏ</figcaption>
+      </figure>
+    </div>
+  </div>
+
+  <p class="kicker blue" style="margin-top:34px">SIFT · PIPELINE TỔNG QUAN</p>
+  <h3 class="h3">4 bước biến một tấm ảnh thành tập vector đặc trưng</h3>
+  <div class="flow-4">
+    <div class="card flow-step"><span class="badge" style="--c:#2E86DE">1</span><b>Scale-space extrema</b><p>Tìm ứng viên keypoint ở mọi tỉ lệ bằng hiệu hai lần làm mờ Gaussian (DoG)</p></div>
+    <div class="card flow-step"><span class="badge" style="--c:#2E86DE">2</span><b>Keypoint localization</b><p>Tinh chỉnh vị trí bằng Taylor; loại điểm yếu tương phản và điểm nằm trên cạnh</p></div>
+    <div class="card flow-step"><span class="badge" style="--c:#2E86DE">3</span><b>Orientation assignment</b><p>Gán hướng θ theo histogram gradient — chìa khoá để bất biến xoay</p></div>
+    <div class="card flow-step"><span class="badge" style="--c:#2E86DE">4</span><b>Descriptor 128-D</b><p>Lưới 4×4 ô × 8 hướng gradient quanh keypoint → vector chuẩn hoá</p></div>
+  </div>
+  <div class="callout blue">
+    <b>Ý tưởng cốt lõi:</b> làm mọi thứ trong « hệ toạ độ riêng » của keypoint — theo scale và hướng θ — nên ảnh xoay / phóng to bao nhiêu, descriptor vẫn giống nhau.
+  </div>
+  <div class="steps-ctl">
+    <span class="hint" style="margin:0">Bấm từng bước để mở chi tiết (có minh hoạ tương tác + ma trận số thật):</span>
+    <button class="w-btn" data-toggle-details="#sift-steps" data-mode="open">Mở tất cả</button>
+    <button class="w-btn" data-toggle-details="#sift-steps" data-mode="close">Đóng tất cả</button>
+  </div>
+
+  <div id="sift-steps">
+
+  <!-- ===== SIFT BƯỚC 1 ===== -->
+  <details class="step" id="sift-b1">
+    <summary>
+      <span class="st-badge" style="--c:#2E86DE">1</span>
+      <span class="st-main"><b>Scale-space extrema (DoG)</b><small>Tìm ứng viên ở mọi độ phóng đại — kèm mục « đi sâu »: vì sao DoG thay thế được Laplacian of Gaussian</small></span>
+      <span class="st-open">mở chi tiết</span>
+    </summary>
+    <div class="step-body">
+      <div class="two-col">
+        <div class="col-side">
+          <ul class="bullets">
+            <li>Làm mờ ảnh bằng <span class="term" data-term="gaussian">Gaussian</span> với chuỗi hệ số σ tăng dần theo tỉ số k = √2</li>
+            <li>Trừ hai mức mờ liên tiếp → ảnh <span class="term" data-term="dog">DoG</span> (Difference of Gaussians)</li>
+            <li>So sánh mỗi pixel với 26 láng giềng (8 cùng mức + 9×2 mức σ kề trên dưới)</li>
+            <li>Là <span class="term" data-term="extrema">cực đại / cực tiểu cục bộ</span> ⇒ ứng viên keypoint ở scale σ đó</li>
+          </ul>
+          <div class="callout blue formula">
+            <b>D(x, σ) = L(x, kσ) − L(x, σ)</b>
+            <small>DoG ≈ xấp xỉ LoG (Laplacian of Gaussian): responsive với blob mà tính nhanh hơn nhiều — chứng minh bên dưới</small>
+          </div>
+        </div>
+        <figure class="imgcard">
+          <img src="img/02_gaussian_dog.jpg" alt="Chuỗi Gaussian và ảnh DoG">
+          <figcaption>Trên: ảnh làm mờ dần theo σ · Dưới: hiệu DoG tương ứng (đỏ = sáng hơn, xanh = tối hơn) — vùng sáng/tối nổi bật chính là « blob »</figcaption>
+        </figure>
+      </div>
+
+      <h4 class="h4">Đi sâu: vì sao DoG thay thế được Laplacian of Gaussian?</h4>
+      <p>LoG là « bản chuẩn » để bắt blob: <span class="term" data-term="log">σ²∇²(G∗I)</span> (Laplacian of Gaussian chuẩn hoá theo scale) đạt cực đại đúng tại tâm blob có kích thước ∝ σ (Lindeberg 1994). Nhưng nó <b>đắt</b>: với mỗi σ phải tính 2 đạo hàm cấp 2 của ảnh mờ. Lowe nhận ra một quan hệ đẹp từ <i>phương trình khuếch tán</i> (heat equation) cho phép lấy kết quả tương đương gần như miễn phí:</p>
+      <div class="deriv-box">
+        <div class="dv-step"><span class="dv-n">1</span><div><b>Phương trình khuếch tán của Gaussian:</b> <span class="dv-math">∂G/∂σ = σ·∇²G</span><small>đạo hàm theo σ liên hệ trực tiếp với Laplacian — đây là « cầu nối » giữa 2 thế giới</small></div></div>
+        <div class="dv-step"><span class="dv-n">2</span><div><b>Xấp xỉ sai phân hữu hạn theo σ:</b> <span class="dv-math">∂L/∂σ ≈ [L(x, kσ) − L(x, σ)] / [(k−1)σ]</span></div></div>
+        <div class="dv-step"><span class="dv-n">3</span><div><b>Kết hợp 2 dòng trên:</b> <span class="dv-math">D(x,σ) = L(x,kσ) − L(x,σ) ≈ (k−1)·σ²·∇²G</span><small>DoG tỉ lệ thuận với scale-normalized LoG qua hệ số (k−1) không đổi — cực đại của cái này cũng là cực đại của cái kia</small></div></div>
+        <div class="dv-step"><span class="dv-n">4</span><div><b>« Miễn phí »:</b> pyramid Gaussian bắt buộc phải có sẵn cho scale-space ⇒ DoG chỉ là <b>phép trừ 2 ảnh kề nhau</b>, không cần đạo hàm nào</small></div></div>
+      </div>
+      <div class="widget" id="w-logdog"></div>
+      <p class="links">📖 Đọc thêm: <a href="https://www.cs.ubc.ca/~lowe/papers/ijcv04.pdf#page=4" target="_blank" rel="noopener">Lowe 2004, §3</a> · <a href="https://link.springer.com/article/10.1007/BFb0056195" target="_blank" rel="noopener">Lindeberg (1994) — Scale-Space Theory in Computer Vision</a> · <a href="https://link.springer.com/article/10.1023/A:1011193214231" target="_blank" rel="noopener">Mikolajczyk &amp; Schmid (2002) — so sánh detector affine + LoG</a></p>
+
+      <div class="tensor-box">
+        <div class="tb-title">📐 Ma trận &amp; tensor ở Bước 1 — kích thước &amp; số thật</div>
+        <div class="tb-grid">
+          <div class="tb-item"><b>I ∈ ℝ^(1000×563)</b><p>ảnh xám từ Bước 0 — đầu vào của scale-space</p></div>
+          <div class="tb-item"><b>G ∈ ℝ^(5×5)</b><p>hạt nhân Gaussian nhỏ nhất, mỗi level nhân với increment σ để « mờ thêm một nấc » (tích chập phân tách 1D×1D). Bảng số thật bên phải</p></div>
+          <div class="tb-item"><b>L<sub>s</sub> ∈ ℝ^(H×W)</b><p>một « trang » mờ cho mỗi mức σ — chồng thành tensor H×W×6 mỗi octave</p></div>
+          <div class="tb-item"><b>D<sub>s</sub> = L<sub>s+1</sub> − L<sub>s</sub></b><p>hiệu 2 trang kề — giá trị tại 1 pixel thật (x, y) = (<span data-real="dog.x" data-fmt="int"></span>, <span data-real="dog.y" data-fmt="int"></span>): L(σ)=<span data-real="dog.La" data-fmt="f1"></span>, L(kσ)=<span data-real="dog.Lb" data-fmt="f1"></span> ⇒ D = <b><span data-real="dog.D" data-fmt="f1"></span></b></p></div>
+          <div class="tb-mat"><small>kernel Gaussian σ = <span data-real="gray.kernelSigma" data-fmt="f2"></span> — 5×5 (tổng = 1)</small><div data-real-mat="gray.kernel5" data-fmt="f3"></div></div>
+        </div>
+      </div>
+
+      <h4 class="h4">Image pyramid: cùng một phép biến đổi, lặp lại ở mọi kích thước ảnh</h4>
+      <p class="hint">Bấm trực tiếp vào ô (octave × level) trong sơ đồ pyramid — hoặc kéo thanh level — để xem ảnh Gaussian / DoG thật tính trong trình duyệt, kèm vị trí các ứng viên keypoint.</p>
+      <div class="widget" id="w-pyramid"></div>
+      <figure class="imgcard center">
+        <img src="img/03_octaves.jpg" alt="Ba octave của pyramid: ảnh thu nhỏ dần, mỗi octave là chuỗi σ tăng dần">
+        <figcaption>Hình minh hoạ: <b>3 octave</b> của pyramid (ảnh thật) — mỗi octave ảnh thu nhỏ ½ và chuỗi σ tăng theo k = √2. Chi tiết nhỏ (gân hoa, hạt bụi) chỉ nổi bật ở octave gốc; cấu trúc lớn (bông hoa cả cụm) nổi bật ở octave đã thu nhỏ — « Nhiều octave ⇒ nhiều scale ».</figcaption>
+      </figure>
+
+      <h4 class="h4">Hạ mẫu giữa các octave: làm bằng gì? Có phải « stride của kernel » không?</h4>
+      <p>Trả lời ngắn: <b>không phải <span class="term" data-term="stride">stride</span>.</b> Stride là khái niệm của CNN (kernel « nhảy » dài sau mỗi bước nhân chập). Ở đây hạt nhân <span class="term" data-term="gaussian">Gaussian</span> vẫn quét <b>từng pixel</b> (bước 1); việc thu nhỏ ảnh là một <b>bước riêng — <span class="term" data-term="decimation">hạ mẫu (decimation)</span></b> — và luôn diễn ra <b>sau</b> khi làm mờ:</p>
+      <div class="deriv-box">
+        <div class="dv-step"><span class="dv-n">1</span><div><b>Làm mờ tới ~2σ trước.</b> Cuối mỗi octave, ảnh đã mờ tới σ ≈ 2·σ₀. Làm mượt trước khi bỏ pixel là điều kiện bắt buộc để tránh <span class="term" data-term="aliasing">aliasing</span> — nếu bỏ pixel « trần », chi tiết mảnh bị mô hoá thành mẫu giả (vạch sọc mảnh biến thành moiré).</div></div>
+        <div class="dv-step"><span class="dv-n">2</span><div><b>SIFT paper (Lowe 2004, §4):</b> kết thúc octave thì <b>lấy cách 1 pixel</b> theo cả hàng và cột (decimation ×2) ⇒ H×W → H/2×W/2, số pixel giảm 4×. Vì đã mờ tới 2σ, ảnh mới có « mức mờ tương đối » giống ảnh gốc ở điểm bắt đầu — công thức lặp lại y nguyên cho octave kế.</div></div>
+        <div class="dv-step"><span class="dv-n">3</span><div><b>OpenCV gói thành <code>pyrDown</code>:</b> tích chập Gaussian 5×5 (kernel [1, 4, 6, 4, 1]/16, separable — quét từng pixel) rồi mới decimation ×2. Widget pyramid phía trên dùng biến thể đơn giản hơn: <b>trung bình khối 2×2</b> rồi lấy 1 đại diện (hàm <code>downsampleHalf</code> trong <code>imgproc.js</code>) — cùng tinh thần « làm mượt rồi hạ mẫu ».</div></div>
+        <div class="dv-step"><span class="dv-n">4</span><div><b>ORB làm khác:</b> không decimation cứng mà <b><code>resize</code> nội suy tuyến tính (bilinear)</b> về tỉ lệ (1/1.2)<sup>level</sup>, rồi chạy FAST riêng trên từng level. Bước nhảy 1.2 « mịn » hơn bước nhảy ×2 của SIFT — nhiều level hơn cho cùng dải scale, nhưng FAST quá rẻ nên không thành vấn đề.</div></div>
+      </div>
+      <div class="tensor-box">
+        <div class="tb-title">📐 Hạ mẫu nhìn dưới góc ma trận</div>
+        <div class="tb-grid">
+          <div class="tb-item"><b>SIFT: L ∈ ℝ^(H×W) → ℝ^(H/2×W/2)</b><p>pyrDown: Gaussian 5×5 chạy trên mọi vị trí (stride 1), sau đó chỉ giữ các pixel chỉ số chẵn — kết quả là ảnh mờ đã « lọc băng thấp » ở độ phân giải nửa</p></div>
+          <div class="tb-item"><b>Widget: 4 pixel → 1</b><p>downsampleHalf: out[y,x] = (L[2y,2x] + L[2y,2x+1] + L[2y+1,2x] + L[2y+1,2x+1]) / 4 — box filter 2×2 cộng decimation</p></div>
+          <div class="tb-item"><b>ORB: L ∈ ℝ^(H×W) → ℝ^(H·s^ℓ × W·s^ℓ)</b><p>với s = 1/1.2 — nội suy bilinear tính trung bình có trọng số của 4 pixel lân cận tại toạ độ <i>lẻ</i> (không trùng lưới gốc)</p></div>
+          <div class="tb-item"><b>Vì sao không dùng stride?</b><p>Stride nhảy mẫu trước khi lọc ⇒ aliasing. Nguyên tắc xử lý tín hiệu: <b>low-pass filter → decimate</b>, không đảo thứ tự. CNN thoải mái dùng stride vì các layer sau tự học bù — detector cổ điển thì không có cơ chế đó</p></div>
+        </div>
+      </div>
+
+      <div class="grid-3 tight">
+        <div><b class="c-blue">Octave = « tầng » của pyramid</b><p>Ảnh được thu nhỏ ½ mỗi octave; σ khởi đầu cũng nhân đôi, để DoG không lặp lại vô ích.</p></div>
+        <div><b class="c-blue">Nhiều octave ⇒ nhiều scale</b><p>Chi tiết nhỏ chỉ nổi bật ở octave gốc; vật thể lớn chỉ nổi bật ở octave đã thu nhỏ.</p></div>
+        <div><b class="c-blue">Keypoint mạnh = ổn định nhiều scale</b><p>Điểm là cực trị qua nhiều mức σ thường chịu được biến đổi hình học tốt hơn.</p></div>
+      </div>
+      <p class="footnote">Paper dùng s = 3 khoảng scale mỗi octave (cần s+3 ảnh mờ), σ đầu = 1.6 · <a href="https://www.cs.ubc.ca/~lowe/papers/ijcv04.pdf#page=7" target="_blank" rel="noopener">paper §4, hình 1</a></p>
+    </div>
+  </details>
+
+  <!-- ===== SIFT BƯỚC 2 ===== -->
+  <details class="step" id="sift-b2">
+    <summary>
+      <span class="st-badge" style="--c:#2E86DE">2</span>
+      <span class="st-main"><b>Keypoint localization</b><small>Tinh chỉnh vị trí dưới-pixel bằng Taylor, loại điểm tương phản thấp và điểm trên cạnh — có bộ lọc tương tác + parabola số thật</small></span>
+      <span class="st-open">mở chi tiết</span>
+    </summary>
+    <div class="step-body">
+      <ul class="bullets wide">
+        <li>Tinh chỉnh vị trí tới độ chính xác <span class="term" data-term="subpixel">dưới-pixel</span> bằng khai triển <span class="term" data-term="taylor">Taylor</span> bậc 2 của DoG: giải <b>x̂ = −H⁻¹·∂D</b></li>
+        <li>Loại điểm tương phản thấp: |D| &lt; 0.03 (thang [0..1]) ⇒ dễ là nhiễu, tìm lại không được</li>
+        <li>Loại điểm trên cạnh: cạnh có nhiều cực trị « giả » kéo dài theo đường thẳng</li>
+        <li>Dùng <span class="term" data-term="hessian">Hessian</span> 2×2 của DoG: nếu <span class="term" data-term="eigenvalue">tỉ số eigenvalue</span> lớn hơn 10 ⇒ nghiêng về cạnh, loại bỏ</li>
+      </ul>
+      <div class="widget" id="w-localize"></div>
+
+      <h4 class="h4">Cách tính H 2×2 — sai phân trung tâm, mượn phép thử của Harris corner detector</h4>
+      <p>H không cần kernel hay cửa sổ lớn: toàn bộ chỉ cần <b>9 giá trị DoG trong lưới 3×3</b> quanh điểm đang xét. Bảng dưới là giá trị thật của ảnh mẫu tại (x, y) = (<span data-real="hess.x" data-fmt="int"></span>, <span data-real="hess.y" data-fmt="int"></span>) — cùng pixel với ví dụ DoG ở Bước 1, ô giữa = D(x, y) = <span data-real="hess.D" data-fmt="f1"></span>:</p>
+      <div class="tb-mat" style="display:inline-block;margin:6px 0 4px"><small>3×3 giá trị DoG quanh điểm — nguyên liệu duy nhất của mọi công thức dưới đây</small><div data-real-mat="hess.stencil" data-fmt="f1"></div></div>
+      <div class="deriv-box">
+        <div class="dv-step"><span class="dv-n">1</span><div><b><span class="term" data-term="central-diff">Sai phân trung tâm</span> cho đạo hàm cấp 2</b> — xấp xỉ đạo hàm bằng hiệu các điểm hai bên:
+          <span class="dv-math">D<sub>xx</sub> = D(x+1) + D(x−1) − 2·D(x)</span>
+          <span class="dv-math">D<sub>yy</sub> = D(y+1) + D(y−1) − 2·D(y)</span>
+          <span class="dv-math">D<sub>xy</sub> = [D(+1,+1) + D(−1,−1) − D(+1,−1) − D(−1,+1)] / 4</span>
+          <small>mỗi phần tử chỉ tốn 2–4 phép trừ (D<sub>xy</sub> thêm 1 phép chia) — không tích chập, không cửa sổ, không đạo hàm ký hiệu</small></div></div>
+        <div class="dv-step"><span class="dv-n">2</span><div><b>Lắp thành H — ma trận đối xứng theo đường chéo</b> (D<sub>xy</sub> = D<sub>yx</sub>), thay số thật:
+          H = <b>[[<span data-real="hess.dxx" data-fmt="f2"></span>, <span data-real="hess.dxy" data-fmt="f2"></span>], [<span data-real="hess.dxy" data-fmt="f2"></span>, <span data-real="hess.dyy" data-fmt="f2"></span>]]</b> ⇒
+          det = Dxx·Dyy − Dxy² = <b><span data-real="hess.det" data-fmt="f2"></span></b> · trace = Dxx + Dyy = <b><span data-real="hess.trace" data-fmt="f2"></span></b>
+          <small>đây chính là H trong bước giải x̂ = −H⁻¹·∂D ở widget phía trên — cùng một ma trận, một lần tính dùng cho cả 2 mục đích (tinh chỉnh + lọc cạnh)</small></div></div>
+        <div class="dv-step"><span class="dv-n">3</span><div><b>Phép thử mượn từ Harris &amp; Stephens (1988).</b> Harris xếp hạng điểm bằng M = Σ<sub>w</sub>[I<sub>x</sub>², I<sub>x</sub>I<sub>y</sub>; I<sub>x</sub>I<sub>y</sub>, I<sub>y</sub>²] — tổng gradient cấp 1 trong cửa sổ — và đo « độ góc » qua <span class="term" data-term="eigenvalue">eigenvalue</span> của M, nhưng tính qua det &amp; trace cho rẻ. Lowe mượn đúng phân tích eigenvalue đó, áp lên H của DoG: nếu
+          <span class="dv-math">tr²/det ≥ (r+1)²/r = 12.1</span>
+          (với r = 10) ⇒ một eigenvalue áp đảo cái kia ⇒ cực trị kéo dài theo cạnh ⇒ <b>loại</b>.
+          <small>Khác tinh thần: Harris cho <b>điểm số</b> R = det − κ·trace² để xếp hạng (xem <a href="#orb-b2">ORB · Bước 2</a> — soi tới từng ma trận); SIFT localization chỉ cần phán định <b>giữ / loại</b> nên dùng thẳng tỉ số, không cần hằng số κ</small></div></div>
+        <div class="dv-step"><span class="dv-n">4</span><div><b>Verdict với số thật:</b> tr²/det = <b><span data-real="hess.ratio"></span></b> &lt; 12.1 ⇒ <b>GIỮ</b> — điểm này không nằm trên cạnh. Nếu ratio ≥ 12.1 (hoặc det ≤ 0) thì widget phía trên sẽ tô đỏ nó như một điểm bị loại</div></div>
+      </div>
+
+      <div class="two-col" style="margin-top:18px">
+        <figure class="imgcard">
+          <img src="img/04_sift_keypoints.jpg" alt="Keypoints SIFT sau localization">
+          <figcaption>Kết quả cuối: vòng tròn = kích thước σ của keypoint · vạch ngang = hướng θ (gán ở bước 3)</figcaption>
+        </figure>
+        <div class="col-side">
+          <div class="callout blue"><b>Kết quả trên ảnh mẫu: 168 keypoints</b><small>sống sót qua 2 bộ lọc — mỗi điểm mang (x, y, σ) riêng, sẵn sàng vào bước 3</small></div>
+          <div class="tensor-box">
+            <div class="tb-title">📐 Ma trận ở Bước 2 — cho 1 keypoint thật</div>
+            <div class="tb-grid">
+              <div class="tb-item"><b>H ∈ ℝ^(2×2)</b><p>Hessian của D: [[D<sub>xx</sub>, D<sub>xy</sub>], [D<sub>xy</sub>, D<sub>yy</sub>]] — độ cong 2 hướng (lấy từ 9 pixel kề trong widget)</p></div>
+              <div class="tb-item"><b>∂D ∈ ℝ²</b><p>gradient (D<sub>x</sub>, D<sub>y</sub>) — đạo hàm cấp 1 trung tâm</p></div>
+              <div class="tb-item"><b>x̂ = −H⁻¹·∂D ∈ ℝ²</b><p>léch phân số (pixel) tới cực trị thật của paraboloid — cộng vào (x, y) thô</p></div>
+              <div class="tb-item"><b>Edge test</b><p>tr²/det ≥ (r+1)²/r = 12.1 với r = 10 ⇒ cạnh ⇒ loại (tương tự tinh thần Harris ở phần ORB)</p></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="links">📖 <a href="https://www.cs.ubc.ca/~lowe/papers/ijcv04.pdf#page=9" target="_blank" rel="noopener">Paper §4 (r = 10, ngưỡng 0.03)</a> · widget trên tính lại đúng các công thức này trên pyramid thật của ảnh mẫu</p>
+    </div>
+  </details>
+
+  <!-- ===== SIFT BƯỚC 3 ===== -->
+  <details class="step" id="sift-b3">
+    <summary>
+      <span class="st-badge" style="--c:#2E86DE">3</span>
+      <span class="st-main"><b>Orientation assignment</b><small>Gán « la bàn » θ cho từng keypoint bằng histogram 36 bins — walkthrough 5 chặng + thử số bins</small></span>
+      <span class="st-open">mở chi tiết</span>
+    </summary>
+    <div class="step-body">
+      <p class="hint">Chọn một keypoint rồi bấm ▶: xem đúng <b>cửa sổ được bóc từ chỗ nào của bức ảnh đầu vào</b>, gradient từng pixel, histogram 36 bins và hướng θ cuối cùng.</p>
+      <div class="widget" id="w-orientation"></div>
+      <p class="footnote">Trọng số = độ lớn gradient × cửa sổ Gaussian σ = 1.5·σ<sub>kp</sub> · cột ≥ 80% cột cao nhất ⇒ thêm θ phụ (~15% điểm có nhiều θ) · nội suy parabola cho θ sub-bin · <a href="https://www.cs.ubc.ca/~lowe/papers/ijcv04.pdf#page=12" target="_blank" rel="noopener">paper §5</a></p>
+
+      <h4 class="h4">Vì sao histogram hướng lại là 36 bins?</h4>
+      <div class="widget" id="w-bins"></div>
+      <div class="grid-4">
+        <div class="card"><b class="c-blue">36 = 360° ÷ 10°</b><p>Mỗi bin gánh một cung 10°, đủ phủ trọn vòng tròn hướng quanh keypoint.</p></div>
+        <div class="card"><b class="c-blue">Lowe chọn 10°/bin</b><p>Thô hơn ⇒ θ sai lệch nhiều; mảnh hơn ⇒ histogram nhiễu, không ổn định. 10° là chỗ cân bằng thực nghiệm.</p></div>
+        <div class="card"><b class="c-blue">Mịn hơn bin bằng nội suy</b><p>Paper nội suy parabola trên 3 bin quanh peak ⇒ θ chính xác nhỏ hơn cả 10°.</p></div>
+        <div class="card"><b class="c-blue">Descriptor thì dùng 8 bins</b><p>Ở bước 4, mỗi ô 4×4 chỉ dựng histogram 8 hướng (45°/bin) — vì đã xoay về θ = 0 nên không cần mảnh hơn.</p></div>
+      </div>
+      <div class="tensor-box">
+        <div class="tb-title">📐 Ma trận ở Bước 3 — dòng chảy dữ liệu</div>
+        <div class="tb-grid">
+          <div class="tb-item"><b>grad ∈ ℝ^(n×2)</b><p>mỗi pixel trong cửa sổ cho 1 hàng [g<sub>x</sub>, g<sub>y</sub>] — hiệu pixel kề (n ≈ 1000 cho bán kính ~18)</p></div>
+          <div class="tb-item"><b>(mag, ang) ∈ ℝ^(n×2)</b><p>toạ độ cực: mag = √(g<sub>x</sub>²+g<sub>y</sub>²), ang = atan2(g<sub>y</sub>, g<sub>x</sub>)</p></div>
+          <div class="tb-item"><b>H ∈ ℝ³⁶</b><p>histogram: mỗi pixel đổ trọng số mag·Gaussian(1.5σ<sub>kp</sub>) vào bin ang/10° (nội suy tuyến tính giữa 2 bin kề)</p></div>
+          <div class="tb-item"><b>θ ∈ ℝ</b><p>peak của H (nội suy parabola) — 1 số duy nhất gán cho keypoint; peak phụ ≥ 80% ⇒ nhân bản keypoint với θ khác</p></div>
+        </div>
+      </div>
+    </div>
+  </details>
+
+  <!-- ===== SIFT BƯỚC 4 ===== -->
+  <details class="step" id="sift-b4">
+    <summary>
+      <span class="st-badge" style="--c:#2E86DE">4</span>
+      <span class="st-main"><b>Descriptor 128-D</b><p class="none"></p><small>« Vân tay » 4×4×8 của keypoint + chuỗi chuẩn hoá 3 bước với số thật</small></span>
+      <span class="st-open">mở chi tiết</span>
+    </summary>
+    <div class="step-body">
+      <div class="two-col">
+        <figure class="imgcard">
+          <img src="img/06_descriptor_grid.jpg" alt="Lưới 4×4 descriptor">
+          <figcaption>Lưới 4×4 vẽ trên patch thật — mỗi ô là một histogram 8 hướng (tính từ gradient thật)</figcaption>
+        </figure>
+        <div class="col-side">
+          <ul class="bullets">
+            <li>Lấy cửa sổ 16×16 pixel quanh keypoint — đã <b>xoay về θ = 0°</b>, scale theo σ</li>
+            <li>Chia thành lưới 4×4 ô, mỗi ô dựng histogram 8 hướng gradient</li>
+            <li>Nối 16 ô × 8 số = 128 chiều ⇒ một vector duy nhất cho mỗi keypoint</li>
+            <li>Chuẩn hoá đơn vị độ dài + kẹp giá trị ≤ 0.2 rồi chuẩn hoá lại ⇒ bất biến sáng / tương phản</li>
+          </ul>
+          <div class="card stat-card"><b class="big c-blue">4 × 4 × 8 = 128-D</b><p>vector float — so sánh được bằng khoảng cách Euclidean. Hai patch trông giống nhau ⇒ hai vector gần nhau, dù ảnh đã xoay / thu phóng / đổi sáng.</p></div>
+        </div>
+      </div>
+      <div class="tensor-box">
+        <div class="tb-title">📐 Tensor ở Bước 4 — từ patch tới vector (số thật từ OpenCV)</div>
+        <div class="tb-grid">
+          <div class="tb-item"><b>patch ∈ ℝ^(16×16×2)</b><p>gradient (g<sub>x</sub>, g<sub>y</sub>) của 256 pixel trong cửa sổ đã xoay về θ = 0</p></div>
+          <div class="tb-item"><b>T ∈ ℝ^(4×4×8)</b><p>tensor descriptor: 16 ô không gian × 8 bin hướng — mỗi phần tử = tổng trọng số gradient</p></div>
+          <div class="tb-item"><b>v ∈ ℝ¹²⁸</b><p>« duỗi » (flatten) T theo thứ tự ô → 128 số; 16 giá trị đầu của 1 keypoint thật (x = <span data-real="sift.kp.x" data-fmt="int"></span>, y = <span data-real="sift.kp.y" data-fmt="int"></span>, σ = <span data-real="sift.kp.sigma" data-fmt="f1"></span>):</b></p></div>
+          <div class="tb-mat"><small>16 giá trị đầu của v (đã chuẩn hoá, ‖v‖ = 1)</small><div data-real-mat="sift.desc16" data-fmt="f3"></div></div>
+          <div class="tb-item"><b>Chuẩn hoá 3 bước</b><p>① v ← v/‖v‖ (‖v‖ = <span data-real="sift.descNorm" data-fmt="f3"></span>) · ② kẹp mọi phần tử &gt; 0.2 về 0.2 — keypoint này có <span data-real="sift.nClamped" data-fmt="int"></span> thành phần bị kẹp · ③ chia ‖v‖ lần nữa. Bước kẹp cắt đuôi « quá dominant » của gradient lớn để một vệt sáng chói không nuốt mất phần còn lại</p></div>
+          <div class="tb-item"><b>So khớp</b><p>cùng điểm này trên ảnh đã xoay cho descriptor v′ ⇒ khoảng cách Euclidean ‖v − v′‖ = <b><span data-real="sift.euclid" data-fmt="f3"></span></b> (nhỏ so với cặp ngẫu nhiên ~0.8–1.4) — đó là « match »</p></div>
+        </div>
+      </div>
+      <p class="links">📖 <a href="https://www.cs.ubc.ca/~lowe/papers/ijcv04.pdf#page=15" target="_blank" rel="noopener">Paper §6.1 (128-D, clamp 0.2)</a></p>
+    </div>
+  </details>
+
+  </div><!-- /sift-steps -->
+
+  <h3 class="h3" id="sift-match">Kết quả: matching ghép điểm giữa hai ảnh đã bị biến đổi</h3>
+  <div class="callout blue">
+    <b>Lowe ratio test:</b> chỉ giữ match nếu khoảng cách gần nhất &lt; 0.75 × khoảng cách gần nhì — loại bỏ các cặp « mơ hồ » · <a class="inline" href="https://www.cs.ubc.ca/~lowe/papers/ijcv04.pdf#page=20" target="_blank" rel="noopener">paper §7.2</a>
+  </div>
+  <figure class="imgcard center">
+    <img src="img/07_sift_matching.jpg" alt="SIFT matching giữa hai ảnh">
+  </figure>
+  <div class="stat-row">
+    <div><b class="big c-blue">168</b><small>keypoints ảnh trái</small></div>
+    <div><b class="big c-blue">134</b><small>keypoints ảnh phải (biến đổi)</small></div>
+    <div><b class="big c-blue">80</b><small>cặp khớp tốt (ratio 0.75)</small></div>
+  </div>
+</section>
+
+<!-- ================= PHẦN 2 · ORB ================= -->
+<section class="sec" id="orb">
+  <div class="sec-head dark-band orange-band">
+    <div class="sec-head-inner">
+      <div>
+        <p class="kicker">PHẦN 2 / 2</p>
+        <h2 class="mega c-orange">ORB</h2>
+        <p class="sub">Oriented FAST and Rotated BRIEF</p>
+        <p class="lead">Rublee, Rabaud, Konolige &amp; Bradski — ICCV 2011 (OpenCV Labs). Ghép FAST + BRIEF, thêm scale &amp; orientation: nhanh hơn SIFT ~1–2 bậc độ lớn, miễn phí hoàn toàn.</p>
+        <ul class="parts">
+          <li><span class="dot o"></span><b>FAST + pyramid + Harris</b> — detector — tìm keypoint nhanh, có scale</li>
+          <li><span class="dot o"></span><b>Intensity centroid</b> — gán hướng θ cho keypoint</li>
+          <li><span class="dot o"></span><b>rBRIEF (steered)</b> — descriptor 256-bit bất biến xoay</li>
+        </ul>
+        <p class="links light">📄 <a href="https://sites.cc.gatech.edu/classes/AY2024/cs4475_summer/images/ORB_an_efficient_alternative_to_SIFT_or_SURF.pdf" target="_blank" rel="noopener">Paper gốc (Rublee et al., ICCV 2011)</a> · <a href="https://ieeexplore.ieee.org/document/6126544" target="_blank" rel="noopener">IEEE Xplore</a></p>
+      </div>
+      <figure class="imgcard">
+        <img src="img/12_orb_matching.jpg" alt="ORB match hai ảnh biến đổi">
+        <figcaption>ORB match cùng cặp ảnh như SIFT</figcaption>
+      </figure>
+    </div>
+  </div>
+
+  <p class="kicker orange" style="margin-top:34px">ORB · PIPELINE TỔNG QUAN</p>
+  <h3 class="h3">Công thức của ORB: FAST (detect) + rBRIEF (describe)</h3>
+  <div class="chain">
+    <div class="card plain"><b>Ảnh</b><p>mỗi level của pyramid</p></div><span class="arr o">→</span>
+    <div class="card orange-card"><b>oFAST</b><p>FAST + pyramid + Harris ranking</p></div><span class="arr o">→</span>
+    <div class="card orange-card"><b>θ centroid</b><p>hướng từng keypoint</p></div><span class="arr o">→</span>
+    <div class="card orange-card"><b>rBRIEF</b><p>256-bit descriptor</p></div><span class="arr">→</span>
+    <div class="card plain"><b>Vector</b><p>so khớp Hamming</p></div>
+  </div>
+  <div class="grid-3">
+    <div class="card"><b class="c-orange">Vì sao cần ORB?</b><p>SIFT có patent (đến 2020) và chậm — robot / drone / điện thoại cần feature real-time, miễn phí.</p></div>
+    <div class="card"><b class="c-blue">Đổi chính xác lấy tốc độ</b><p>Descriptor binary « thô » hơn float của SIFT nhưng đủ tốt — và nhanh hơn ~1–2 bậc độ lớn.</p></div>
+    <div class="card"><b class="c-green">Trở thành chuẩn thực tế</b><p>Nền tảng của ORB-SLAM, cookie của nhiều pipeline AR / mobile / edge device.</p></div>
+  </div>
+  <p class="footnote">Thử thách nổi tiếng: thời BRIEF chưa xoay được, ORB thêm cả scale (pyramid) lẫn xoay (steered) — hai thứ BRIEF gốc yếu nhất. <a href="https://en.wikipedia.org/wiki/Oriented_FAST_and_Rotated_BRIEF" target="_blank" rel="noopener">Tổng quan ORB trên Wikipedia</a></p>
+  <div class="steps-ctl">
+    <span class="hint" style="margin:0">Bấm từng bước để mở chi tiết:</span>
+    <button class="w-btn" data-toggle-details="#orb-steps" data-mode="open">Mở tất cả</button>
+    <button class="w-btn" data-toggle-details="#orb-steps" data-mode="close">Đóng tất cả</button>
+  </div>
+
+  <div id="orb-steps">
+
+  <!-- ===== ORB BƯỚC 1 ===== -->
+  <details class="step" id="orb-b1">
+    <summary>
+      <span class="st-badge" style="--c:#E67E22">1</span>
+      <span class="st-main"><b>FAST: phát hiện corner bằng phép so sánh sáng tối</b><small>16 pixel trên vòng tròn bán kính 3 — kèm vector 16 giá trị thật</small></span>
+      <span class="st-open">mở chi tiết</span>
+    </summary>
+    <div class="step-body">
+      <ul class="bullets wide">
+        <li>Xét 16 pixel trên vòng tròn bán kính 3 quanh điểm ứng viên p</li>
+        <li>Corner nếu ≥ 12/16 điểm liên tiếp đều sáng hơn p + t hoặc tối hơn p − t (ngưỡng t; ORB dùng <span class="term" data-term="fast">FAST-9</span> + non-max suppression)</li>
+        <li>Siêu nhanh — chỉ phép so sánh số nguyên, không phải tính đạo hàm như DoG / Harris</li>
+      </ul>
+      <figure class="imgcard center">
+        <img src="img/08_fast.jpg" alt="Cơ chế FAST và kết quả">
+        <figcaption>Trái: cơ chế vòng 16 điểm (cung xanh = chuỗi điểm sáng liên tiếp) · Phải: FAST chạy thật — chỉ corners, chưa có scale &amp; orientation</figcaption>
+      </figure>
+      <div class="tensor-box">
+        <div class="tb-title">📐 Vector ở Bước 1 — 1 corner thật (x = <span data-real="fast.x" data-fmt="int"></span>, y = <span data-real="fast.y" data-fmt="int"></span>, t = <span data-real="fast.t" data-fmt="int"></span>)</div>
+        <div class="tb-grid">
+          <div class="tb-item"><b>p, I(p) ∈ ℝ</b><p>độ sáng pixel trung tâm = <b><span data-real="fast.center" data-fmt="int"></span></b> — mốc so sánh</p></div>
+          <div class="tb-item"><b>ring ∈ ℝ¹⁶</b><p>16 giá trị sáng theo thứ tự vòng (bắt đầu từ đỉnh, ngược kim đồng hồ) — bảng bên phải</p></div>
+          <div class="tb-item"><b>state ∈ {+1, 0, −1}¹⁶</b><p>mỗi vị trí: sáng hơn p+t (+1) / tối hơn p−t (−1) / lưng chừng (0)</p></div>
+          <div class="tb-item"><b>Chuỗi dài nhất</b><p>cùng dấu liên tiếp (quanh vòng) = <b><span data-real="fast.runLen" data-fmt="int"></span> ≥ 9</b> ⇒ đủ điều kiện FAST-9 ⇒ p là corner</p></div>
+          <div class="tb-mat"><small>16 giá trị I trên vòng (thứ tự vòng)</small><div data-real-mat="fast.ring" data-fmt="int"></div></div>
+          <div class="tb-mat"><small>state (+1 / 0 / −1)</small><div data-real-mat="fast.states"></div></div>
+        </div>
+      </div>
+      <p class="footnote">Paper FAST: Rosten &amp; Drummond, ECCV 2006 — <a href="https://www.edwardrosten.com/work/rosten_2006_machine.pdf" target="_blank" rel="noopener">PDF gốc</a> · <a href="https://docs.opencv.org/3.4/df/d3b/tutorial_py_fast.html" target="_blank" rel="noopener">Tutorial OpenCV</a></p>
+    </div>
+  </details>
+
+  <!-- ===== ORB BƯỚC 2 ===== -->
+  <details class="step" id="orb-b2">
+    <summary>
+      <span class="st-badge" style="--c:#E67E22">2</span>
+      <span class="st-main"><b>Pyramid + Harris: bổ sung scale và chọn điểm mạnh nhất</b><small>Công thức Harris &amp; Stephens 1988 soi tới từng ma trận M, eigenvalue, R — ngay trên ảnh</small></span>
+      <span class="st-open">mở chi tiết</span>
+    </summary>
+    <div class="step-body">
+      <p class="hint">Kéo thanh <b>top-N</b> để xem Harris xếp hạng điểm FAST. Sau đó <b>rê chuột lên ảnh trái</b> (hoặc bấm 3 nút mẫu) ở bảng « soi ma trận » để thấy từng thành phần của công thức biến thành số thật.</p>
+      <div class="widget" id="w-harris"></div>
+      <div class="tensor-box">
+        <div class="tb-title">📐 Ma trận ở Bước 2 — Harris cho 1 corner thật (x = <span data-real="harris.x" data-fmt="int"></span>, y = <span data-real="harris.y" data-fmt="int"></span>, cửa sổ 7×7)</div>
+        <div class="tb-grid">
+          <div class="tb-item"><b>∇I ∈ ℝ^(7×7×2)</b><p>gradient (I<sub>x</sub>, I<sub>y</sub>) từng pixel trong cửa sổ — heatmap trong widget</p></div>
+          <div class="tb-item"><b>M = Σ<sub>w</sub>[I<sub>x</sub>² I<sub>x</sub>I<sub>y</sub> ; I<sub>x</sub>I<sub>y</sub> I<sub>y</sub>²]</b><p><span class="term" data-term="structure-tensor">structure tensor</span> 2×2 — tổng 49 pixel của 3 tổ hợp đạo hàm (bảng số thật bên phải)</p></div>
+          <div class="tb-item"><b>λ₁, λ₂</b><p>eigenvalue của M: λ₁ = <b><span data-real="harris.lam1" data-fmt="int"></span></b>, λ₂ = <b><span data-real="harris.lam2" data-fmt="int"></span></b> — cả hai lớn ⇒ góc thật</p></div>
+          <div class="tb-item"><b>R = det − 0.04·trace²</b><p>= <b><span data-real="harris.R" data-fmt="int"></span></b> (dương lớn ⇒ góc; âm ⇒ cạnh; ≈ 0 ⇒ phẳng) — chỉ cần det &amp; trace, không cần eig riêng</p></div>
+          <div class="tb-mat"><small>M (2×2, số thật từ OpenCV-cùng công thức)</small><div data-real-mat="harris.M" data-fmt="int"></div></div>
+        </div>
+      </div>
+      <p class="footnote">FAST không có thước đo « độ góc » và báo nhiều điểm trên cạnh ⇒ ORB tính Harris response cho <b>mọi</b> FAST keypoint, xếp hạng theo level rồi response, giữ top-N (paper: N = 500) · <a href="https://sites.cc.gatech.edu/classes/AY2024/cs4475_summer/images/ORB_an_efficient_alternative_to_SIFT_or_SURF.pdf" target="_blank" rel="noopener">ORB paper §3.1</a> · <a href="https://doi.org/10.1016/0734-189X(88)90022-1" target="_blank" rel="noopener">Harris &amp; Stephens (1988) — paper gốc</a></p>
+    </div>
+  </details>
+
+  <!-- ===== ORB BƯỚC 3 ===== -->
+  <details class="step" id="orb-b3">
+    <summary>
+      <span class="st-badge" style="--c:#E67E22">3</span>
+      <span class="st-main"><b>Intensity centroid: xác định hướng θ bằng « tâm khối sáng »</b><small>2 moment + 1 atan2 — với số thật của 1 keypoint</small></span>
+      <span class="st-open">mở chi tiết</span>
+    </summary>
+    <div class="step-body">
+      <div class="two-col">
+        <div class="col-side">
+          <ul class="bullets">
+            <li>Coi cường độ sáng của pixel như « khối lượng »: vùng sáng ⇒ tâm khối lệch về phía đó</li>
+            <li>Tính <span class="term" data-term="moment">moment</span> trên patch quanh keypoint: m₁₀ = Σ x·I(x,y), m₀₁ = Σ y·I(x,y)</li>
+            <li>Vector từ tâm patch tới <span class="term" data-term="centroid">centroid</span> chỉ hướng θ của keypoint</li>
+            <li>Nhanh hơn histogram 36 bins của SIFT, vẫn ổn định ở góc xoay lớn</li>
+          </ul>
+          <div class="callout orange formula"><b>θ = atan2(m₀₁, m₁₀)</b><small>chỉ 2 phép moment + 1 atan2 cho mỗi keypoint</small></div>
+        </div>
+        <figure class="imgcard">
+          <img src="img/10_centroid.jpg" alt="Intensity centroid">
+          <figcaption>Trái: patch thật — tâm patch (+), centroid sáng hơn (○) và hướng θ · Phải: patch xoay chuẩn hoá về θ = 0° trước khi trích rBRIEF</figcaption>
+        </figure>
+      </div>
+      <div class="tensor-box">
+        <div class="tb-title">📐 Ma trận ở Bước 3 — moment cho 1 keypoint thật (x = <span data-real="centroid.x" data-fmt="int"></span>, y = <span data-real="centroid.y" data-fmt="int"></span>, patch 31×31)</div>
+        <div class="tb-grid">
+          <div class="tb-item"><b>I ∈ ℝ^(31×31)</b><p>patch quanh keypoint — 961 giá trị sáng</p></div>
+          <div class="tb-item"><b>m₀₀ = Σ I(x,y)</b><p>= <b><span data-real="centroid.m00" data-fmt="int"></span></b> — « tổng khối sáng » (chuẩn hoá)</p></div>
+          <div class="tb-item"><b>m₁₀, m₀₁</b><p>m₁₀ = Σ x·I = <b><span data-real="centroid.m10" data-fmt="int"></span></b> · m₀₁ = Σ y·I = <b><span data-real="centroid.m01" data-fmt="int"></span></b> — khối sáng lệch về đâu</p></div>
+          <div class="tb-item"><b>θ = atan2(m₀₁, m₁₀)</b><p>= <b><span data-real="centroid.theta" data-fmt="f1"></span>°</b> — so sánh: SIFT phải dựng histogram 36 bins rồi mới ra θ</p></div>
+        </div>
+      </div>
+      <p class="links">📖 <a href="https://sites.cc.gatech.edu/classes/AY2024/cs4475_summer/images/ORB_an_efficient_alternative_to_SIFT_or_SURF.pdf" target="_blank" rel="noopener">ORB paper §3.2</a> · dựa trên <a href="https://doi.org/10.1049/ipr:19990008" target="_blank" rel="noopener">Rosin (1999) — moments cho góc cạnh</a></p>
+    </div>
+  </details>
+
+  <!-- ===== ORB BƯỚC 4 ===== -->
+  <details class="step" id="orb-b4">
+    <summary>
+      <span class="st-badge" style="--c:#E67E22">4</span>
+      <span class="st-main"><b>rBRIEF: descriptor 256-bit bất biến xoay</b><small>Bao gồm: con số 205,590 tính từ đâu, thuật toán greedy học 256 cặp, ma trận xoay và demo Hamming trên bit thật</small></span>
+      <span class="st-open">mở chi tiết</span>
+    </summary>
+    <div class="step-body">
+      <h4 class="h4">BRIEF đếm từ đâu: 1 test = 1 bit so sáng tối</h4>
+      <p>Mỗi phép test lấy <b>2 ô 5×5</b> (đã làm mượt bằng integral image) trong patch 31×31 quanh keypoint: nếu độ sáng ô thứ nhất &lt; ô thứ hai ⇒ bit 1, ngược lại ⇒ bit 0. Chọn 256 test ⇒ descriptor 256 bit. Câu hỏi then chốt: <b>256 test đó chọn theo cách nào</b> trong số tất cả các khả năng?</p>
+
+      <h4 class="h4">Con số 205,590 tính từ đâu?</h4>
+      <div class="deriv-box orange">
+        <div class="dv-step"><span class="dv-n">1</span><div><b>Patch 31×31, test = cặp 2 ô 5×5.</b> Mỗi ô 5×5 được đặt gọn trong patch ⇒ vùng có thể đặt ô là dải (31−5)×(31−5) = <b>26×26</b> ⇒ <b>676 ô</b> khả dĩ</div></div>
+        <div class="dv-step"><span class="dv-n">2</span><div><b>Chọn 2 ô khác nhau trong 676 ô:</b> C(676, 2) = 676·675/2 = <b>228,150</b> cặp test</div></div>
+        <div class="dv-step"><span class="dv-n">3</span><div><b>Loại các cặp mà 2 ô 5×5 chồng lấn nhau</b> (chung ít nhất 1 pixel — 2 test không độc lập, thông tin trùng): có đúng <b>22,560</b> cặp như vậy</div></div>
+        <div class="dv-step"><span class="dv-n">4</span><div><b>228,150 − 22,560 = <span class="dv-big">205,590</span> test ứng viên</b> — đây chính là con số trong ORB paper §4.3: « greedy học 256 test từ 205,590 khả năng »</div></div>
+        <div class="dv-step"><span class="dv-n">5</span><div><b>Greedy chọn 256:</b> test có mean bit ≈ 0.5 (variance cao nhất = 0.25 — phân biệt tốt) và <b>tương quan thấp</b> với các test đã chọn — học từ 300k keypoint (PASCAL 2006), dùng cố định cho mọi ảnh sau này</div></div>
+      </div>
+      <p class="footnote">Cách tính lại theo <a href="https://gilscvblog.com/2013/10/04/a-tutorial-on-binary-descriptors-part-3-the-orb-descriptor" target="_blank" rel="noopener">Gil's CV Blog — tutorial binary descriptors (phần 3)</a>; số học kiểm chứng bằng brute-force trong <code>scripts/generate_assets.py</code> (hàm <code>verify_205590()</code>). Lưu ý: một số cách đếm khác lấy vùng 27×27 = 729 ô ⇒ ra con số hơi khác — bản chất đều là « chọn 2 ô không chồng từ ~26–27 ô cạnh ».</p>
+
+      <div class="widget" id="w-greedy"></div>
+      <div class="grid-3 tight">
+        <div><b class="c-orange">Steered BRIEF</b><p>Xoay toạ độ các cặp theo θ keypoint trước khi so sáng tối; góc lượng tử hoá 2π/30 (12°) thành bảng pattern có sẵn.</p></div>
+        <div><b class="c-orange">So khớp sau đó = Hamming</b><p>So 2 chuỗi bit: XOR rồi đếm bit 1 — phần cứng làm trong 1 lệnh. Descriptor 256 bit = 32 byte (SIFT: 512 byte).</p></div>
+        <div><b class="c-green">256 bit = 32 byte · nhanh ~10×</b><p>Nhỏ hơn 16 lần so với 128 số thực của SIFT; đủ tốt trong thực tế (benchmark ở phần So sánh).</p></div>
+      </div>
+
+      <h4 class="h4">Xoay pattern bằng ma trận R<sub>θ</sub> — 1 cặp test thật</h4>
+      <p>Với θ = <b><span data-real="rbrief.theta" data-fmt="f1"></span>°</b> của keypoint ở Bước 3, mỗi cặp toạ độ test (x, y) được nhân với ma trận xoay trước khi lấy mẫu — nhờ vậy cùng vùng vật thể cho cùng chuỗi bit dù ảnh đã quay:</p>
+      <div class="tensor-box">
+        <div class="tb-title">📐 Phép xoay steered — số thật</div>
+        <div class="tb-grid">
+          <div class="tb-mat"><small>ma trận xoay R<sub>θ</sub> (2×2)</small><div data-real-mat="rbrief.rotMat" data-fmt="f3"></div></div>
+          <div class="tb-mat"><small>cặp test gốc (x, y)</small><div data-real-mat="rbrief.pairA" data-fmt="f1"></div></div>
+          <div class="tb-mat"><small>sau xoay: R<sub>θ</sub>·(x, y)</small><div data-real-mat="rbrief.pairB" data-fmt="f1"></div></div>
+          <div class="tb-item"><b>Nhân ma trận</b><p>[x′, y′]ᵀ = R<sub>θ</sub>·[x, y]ᵀ — làm cho <b>mọi</b> 256 cặp của pattern; giá trị toạ độ được lượng tử hoá về lưới pixel</p></div>
+        </div>
+      </div>
+
+      <h4 class="h4">Demo Hamming trên 256 bit thật</h4>
+      <div class="widget" id="w-bits"></div>
+      <p class="footnote">BRIEF gốc: <a href="https://www.cs.ubc.ca/~lowe/525/papers/calonder_eccv10.pdf" target="_blank" rel="noopener">Calonder et al., ECCV 2010</a> · rBRIEF &amp; thuật toán greedy: <a href="https://sites.cc.gatech.edu/classes/AY2024/cs4475_summer/images/ORB_an_efficient_alternative_to_SIFT_or_SURF.pdf" target="_blank" rel="noopener">ORB paper §4.3</a> · <a href="https://docs.opencv.org/3.4.20/dc/d7d/tutorial_py_brief.html" target="_blank" rel="noopener">BRIEF trên OpenCV</a></p>
+    </div>
+  </details>
+
+  </div><!-- /orb-steps -->
+
+  <h3 class="h3" id="orb-match">Kết quả: nhanh và vẫn khớp tốt trên cùng cặp ảnh</h3>
+  <div class="two-col">
+    <figure class="imgcard">
+      <img src="img/12_orb_matching.jpg" alt="ORB keypoints và matches">
+      <figcaption>Trên: keypoints ORB · Dưới: 80 matches tốt nhất (Hamming + ratio test 0.8)</figcaption>
+    </figure>
+    <div class="col-side">
+      <div class="stat-list">
+        <div><b class="big c-orange">653</b><small>keypoints (nfeatures = 800)</small></div>
+        <div><b class="big c-orange">80</b><small>cặp khớp tốt trên ảnh biến đổi</small></div>
+        <div><b class="big c-orange"><span data-real="versus.tOrb" data-fmt="f1"></span> ms</b><small>detect + describe / ảnh (SIFT: <span data-real="versus.tSift" data-fmt="f1"></span> ms)</small></div>
+      </div>
+      <div class="callout orange"><b>≈ 10× nhanh hơn SIFT</b> trên cùng máy — đủ chuẩn để chạy 30–60 fps trên CPU thường</div>
+      <p class="links">⚙ <a href="https://docs.opencv.org/3.4/d1/d89/tutorial_py_orb.html" target="_blank" rel="noopener">Tutorial ORB (OpenCV)</a></p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= SO SÁNH ================= -->
+<section class="sec alt" id="sosanh">
+  <p class="kicker navy">SO SÁNH</p>
+  <h2 class="h1">Cùng một tấm ảnh, hai giải thuật — hai kết quả khác nhau</h2>
+  <p>Để thấy sự khác biệt <b>ngay từ bước detect</b>, bật/tắt 2 lớp ứng viên dưới đây (tính lại bằng JavaScript trên cùng một ảnh mẫu):</p>
+  <div class="widget" id="w-versus"></div>
+
+  <div class="two-col" style="margin-top:20px">
+    <figure class="imgcard">
+      <img src="img/14_same_image_kp.jpg" alt="Cùng ảnh — keypoints SIFT vs ORB">
+      <figcaption>Cùng ảnh gốc đi qua 2 detector (chạy thật OpenCV): SIFT bắt blob theo scale — vòng tròn to nhỏ khác nhau; ORB bắt corner — chấm đều nhau, không đo σ liên tục</figcaption>
+    </figure>
+    <figure class="imgcard">
+      <img src="img/15_same_image_match.jpg" alt="Cùng cặp ảnh — matches SIFT vs ORB">
+      <figcaption>Cùng cặp ảnh (phải đã xoay 35° + thu nhỏ + sáng hơn): hai cách matching cho đường nối khác nhau — SIFT khớp dày ở vùng texture đều, ORB gom về corner sắc</figcaption>
+    </figure>
+  </div>
+
+  <h3 class="h3">Theo chân một keypoint « cánh hoa » qua cả hai giải thuật</h3>
+  <div class="grid-2">
+    <div class="card summary blue-card2">
+      <b>Qua SIFT</b>
+      <ul>
+        <li>Đốm sáng trên cánh là <b>blob</b> ⇒ cực trị DoG tại σ riêng (nói rõ vật to thế nào)</li>
+        <li>Taylor tinh chỉnh (x, y, σ) dưới-pixel; Hessian loại điểm nằm trên gân cánh (cạnh)</li>
+        <li>θ từ histogram 36 bins gradient — mô tả « dirección nền » quanh điểm</li>
+        <li>Descriptor: 16×16 patch xoay về θ, gom thành tensor 4×4×8 ⇒ <b>128 số thực</b>, chuẩn hoá + kẹp 0.2 · so khớp bằng <b>Euclidean</b></li>
+      </ul>
+    </div>
+    <div class="card summary orange-card2">
+      <b>Qua ORB</b>
+      <ul>
+        <li>Cạnh cánh gặp gân hoa tạo <b>corner</b> ⇒ FAST-9 bắt trong ~20 phép so sánh số nguyên</li>
+        <li>Harris R = det − 0.04·trace² xếp hạng, giữ top-N mỗi level pyramid</li>
+        <li>θ = atan2(m₀₁, m₁₀) — 2 moment « tâm khối sáng », không cần histogram</li>
+        <li>Descriptor: patch 31×31 xoay theo θ, 256 cặp so sáng tối ⇒ <b>256 bit</b> · so khớp bằng <b>Hamming</b> (XOR + đếm bit 1)</li>
+      </ul>
+    </div>
+  </div>
+  <div class="callout blue">
+    <b>Hai descriptor không « nói » cùng ngôn ngữ:</b> 128 số thực của SIFT không thể so với 256 bit của ORB — khác hệ đo (Euclidean vs Hamming), khác đơn vị, khác độ dài. Đó là vì sao phải chọn một giải thuật cho cả pipeline, và cũng là ví dụ sạch nhất của 2 triết lý: <i>chính xác tốn kém</i> vs <i>thô nhưng cực nhanh</i>.
+  </div>
+
+  <h3 class="h3">Bảng so sánh &amp; benchmark thật</h3>
+  <div class="two-col">
+    <div>
+      <div class="table-scroll">
+      <table class="cmp">
+        <tr><th>Tiêu chí</th><th class="h-sift">SIFT</th><th class="h-orb">ORB</th></tr>
+        <tr><td>Ra đời</td><td>Lowe, 1999 / 2004</td><td>Rublee et al., ICCV 2011</td></tr>
+        <tr><td>Detector</td><td>Cực trị DoG trên scale-space</td><td>FAST + pyramid + Harris</td></tr>
+        <tr><td>Orientation</td><td>Histogram 36 bins gradient</td><td>Intensity centroid</td></tr>
+        <tr><td>Descriptor</td><td>128-D float (512 byte)</td><td>256-bit binary (32 byte)</td></tr>
+        <tr><td>So khớp</td><td>Euclidean (float)</td><td>Hamming (XOR — rất nhanh)</td></tr>
+        <tr><td>Bất biến</td><td>Xoay · scale · sáng · affine nhẹ</td><td>Xoay · scale · sáng</td></tr>
+        <tr><td>Tốc độ</td><td>Chuẩn mực, chậm hơn</td><td>Nhanh hơn ~1–2 bậc độ lớn</td></tr>
+        <tr><td>License</td><td>Có patent — hết hạn 2020</td><td>Miễn phí (BSD)</td></tr>
+        <tr><td>Dùng khi</td><td>Cần chính xác tối đa, ảnh biến đổi mạnh</td><td>Real-time: SLAM, drone, AR, mobile</td></tr>
+      </table>
+      </div>
+    </div>
+    <div class="col-side">
+      <figure class="imgcard">
+        <img src="img/13_benchmark.jpg" alt="Benchmark SIFT vs ORB">
+        <figcaption>Benchmark thật: detect + describe trên ảnh 1000×563, trung bình 30 lần chạy (OpenCV 5.0)</figcaption>
+      </figure>
+      <div class="callout blue"><b><span data-real="versus.ratio" data-fmt="f1"></span>× nhanh hơn · 16× nhẹ hơn</b><small>cùng ~80 matches tốt — đo trực tiếp trên máy này (<span data-real="versus.tSift" data-fmt="f1"></span> ms vs <span data-real="versus.tOrb" data-fmt="f1"></span> ms), cùng cặp ảnh mẫu</small></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= ỨNG DỤNG ================= -->
+<section class="sec" id="ungdung">
+  <p class="kicker green">ỨNG DỤNG</p>
+  <h2 class="h1">Feature matching chạy đâu trong đời thực?</h2>
+  <div class="apps">
+    <div class="app"><span class="appicon" style="--c:#2E86DE">PANO</span><div><b>Panorama / image stitching</b><p>Ghép nhiều ảnh chụp liền nhau thành một tấm rộng — phone camera làm việc này mỗi lần bạn chụp panorama.</p></div></div>
+    <div class="app"><span class="appicon" style="--c:#E67E22">SLAM</span><div><b>SLAM &amp; robot tự hành</b><p>Định vị + dựng bản đồ real-time. ORB-SLAM là nền tảng của nhiều robot, drone, xe tự lái.</p></div></div>
+    <div class="app"><span class="appicon" style="--c:#0E9F6E">AR</span><div><b>Thực tế tăng cường</b><p>Gắn vật thể 3D lên bề mặt thật: tìm keypoints của marker / cảnh, tính ma trận chuyển đổi, đặt vật thể lên.</p></div></div>
+    <div class="app"><span class="appicon" style="--c:#2E86DE">3D</span><div><b>3D reconstruction (SfM)</b><p>Từ nhiều ảnh chụp cùng vật thể ở góc khác nhau, khôi phục hình học 3D nhờ các cặp điểm tương ứng.</p></div></div>
+    <div class="app"><span class="appicon" style="--c:#E67E22">TAG</span><div><b>Object recognition &amp; retrieval</b><p>Bộ keypoints + descriptors làm « chữ ký » vật thể / ảnh để tìm trong kho dữ liệu lớn.</p></div></div>
+    <div class="app"><span class="appicon" style="--c:#0E9F6E">TRK</span><div><b>Tracking vật thể trong video</b><p>Theo dõi vật thể qua từng frame — thể thao, an ninh, phân tích chuyển động.</p></div></div>
+  </div>
+</section>
+
+<!-- ================= TÓM TẮT ================= -->
+<section class="sec alt" id="tomtat">
+  <p class="kicker navy">TÓM TẮT</p>
+  <h2 class="h1">SIFT &amp; ORB — hai con đường, một mục tiêu</h2>
+  <div class="grid-2">
+    <div class="card summary blue-card2">
+      <b>SIFT — chính xác</b>
+      <ul>
+        <li>DoG scale-space (≈ LoG rẻ) → keypoint có (x, y, σ, θ)</li>
+        <li>Descriptor 128-D float, bất biến xoay / scale / sáng</li>
+        <li>Chuẩn mực so sánh trong nghiên cứu nhiều năm</li>
+        <li>Chậm hơn — hợp ảnh khó, offline, cần độ chính xác cao</li>
+      </ul>
+    </div>
+    <div class="card summary orange-card2">
+      <b>ORB — nhanh</b>
+      <ul>
+        <li>FAST + pyramid + Harris → keypoint nhanh, có scale</li>
+        <li>θ bằng intensity centroid; rBRIEF 256-bit steered (học từ 205,590 test ứng viên)</li>
+        <li>Hamming matching cực nhanh, descriptor nhẹ 16×</li>
+        <li>Chọn khi cần real-time: SLAM, drone, AR, mobile</li>
+      </ul>
+    </div>
+  </div>
+  <div class="callout navy-callout">
+    <b>Quy tắc chọn nhanh:</b> ảnh biến đổi mạnh &amp; cần chính xác tối đa → SIFT · cần tốc độ / thiết bị yếu / real-time → ORB. Trong OpenCV: <code>cv2.SIFT_create()</code> · <code>cv2.ORB_create()</code>. Và nhớ: cả hai đều ăn <b>ảnh xám</b> — OpenCV tự chuyển từ ảnh màu (Bước 0).
+  </div>
+</section>
+
+<!-- ================= TÀI LIỆU ================= -->
+<section class="sec dark" id="tailieu">
+  <p class="kicker">TÀI LIỆU · PAPER GỐC · BLOG</p>
+  <h2 class="h1 c-white">Đọc sâu hơn — mọi con số trên trang đều tra được tới nguồn</h2>
+  <div class="refs">
+    <div class="ref-col">
+      <h3>Papers gốc</h3>
+      <ul>
+        <li><a href="https://www.cs.ubc.ca/~lowe/papers/ijcv04.pdf" target="_blank" rel="noopener">Lowe (2004) — Distinctive Image Features from Scale-Invariant Keypoints, IJCV</a> <span class="mut">· §3 DoG≈LoG, 36 bins, 80%, r=10, clamp 0.2 đều ở đây</span></li>
+        <li><a href="https://sites.cc.gatech.edu/classes/AY2024/cs4475_summer/images/ORB_an_efficient_alternative_to_SIFT_or_SURF.pdf" target="_blank" rel="noopener">Rublee et al. (2011) — ORB: An Efficient Alternative to SIFT or SURF, ICCV</a> <span class="mut">· §3.1 Harris, §3.2 centroid, §4.3 greedy (205,590 tests)</span></li>
+        <li><a href="https://doi.org/10.1016/0734-189X(88)90022-1" target="_blank" rel="noopener">Harris &amp; Stephens (1988) — A Combined Corner and Edge Detector (Alvey)</a> <span class="mut">· công thức R = det − κ·trace²</span></li>
+        <li><a href="https://www.edwardrosten.com/work/rosten_2006_machine.pdf" target="_blank" rel="noopener">Rosten &amp; Drummond (2006) — Machine Learning for High-Speed Corner Detection (FAST)</a></li>
+        <li><a href="https://www.cs.ubc.ca/~lowe/525/papers/calonder_eccv10.pdf" target="_blank" rel="noopener">Calonder et al. (2010) — BRIEF: Binary Robust Independent Elementary Features</a></li>
+        <li><a href="https://link.springer.com/article/10.1007/BFb0056195" target="_blank" rel="noopener">Lindeberg (1994) — Scale-Space Theory in Computer Vision</a> <span class="mut">· nền lý thuyết σ²∇²G bắt blob tối ưu</span></li>
+        <li><a href="https://doi.org/10.1049/ipr:19990008" target="_blank" rel="noopener">Rosin (1999) — Measuring Corner Properties</a> <span class="mut">· intensity centroid cho góc</span></li>
+        <li><a href="https://link.springer.com/article/10.1023/A:1011193214231" target="_blank" rel="noopener">Mikolajczyk &amp; Schmid (2002) — An Affine Invariant Interest Point Detector</a> <span class="mut">· so sánh LoG / DoG / Harris</span></li>
+        <li><a href="https://ieeexplore.ieee.org/document/6126544" target="_blank" rel="noopener">ORB trên IEEE Xplore</a> · <a href="https://www.epfl.ch/labs/cvlab/research/descriptors-and-keypoints/research-detect-brief" target="_blank" rel="noopener">Trang BRIEF của EPFL CVLab</a></li>
+      </ul>
+    </div>
+    <div class="ref-col">
+      <h3>Tutorial &amp; giải thích</h3>
+      <ul>
+        <li><a href="https://docs.opencv.org/3.4/da/df5/tutorial_py_sift_intro.html" target="_blank" rel="noopener">OpenCV — SIFT intro</a> · <a href="https://docs.opencv.org/3.4/d1/d89/tutorial_py_orb.html" target="_blank" rel="noopener">ORB</a> · <a href="https://docs.opencv.org/3.4/df/d3b/tutorial_py_fast.html" target="_blank" rel="noopener">FAST</a> · <a href="https://docs.opencv.org/3.4/dc/d0d/tutorial_py_harris_detector.html" target="_blank" rel="noopener">Harris</a> · <a href="https://docs.opencv.org/3.4.20/dc/d7d/tutorial_py_brief.html" target="_blank" rel="noopener">BRIEF</a></li>
+        <li><a href="https://gilscvblog.com/2013/10/04/a-tutorial-on-binary-descriptors-part-3-the-orb-descriptor" target="_blank" rel="noopener">Gil's CV Blog — A tutorial on binary descriptors, part 3 (ORB)</a> <span class="mut">· cách tính lại 205,590 test ứng viên</span></li>
+        <li><a href="https://www.cs.ubc.ca/~lowe/keypoints/" target="_blank" rel="noopener">Trang SIFT của David Lowe (UBC)</a> — demo, code, patents</li>
+        <li><a href="https://szeliski.org/Book/" target="_blank" rel="noopener">Szeliski — Computer Vision: Algorithms and Applications</a> <span class="mut">· chương 4: Feature Detection &amp; Matching</span></li>
+        <li><a href="https://en.wikipedia.org/wiki/Scale-invariant_feature_transform" target="_blank" rel="noopener">Wikipedia — SIFT</a> · <a href="https://en.wikipedia.org/wiki/Oriented_FAST_and_Rotated_BRIEF" target="_blank" rel="noopener">ORB</a> · <a href="https://en.wikipedia.org/wiki/Corner_detection" target="_blank" rel="noopener">Corner detection / Harris</a></li>
+      </ul>
+      <h3>Về trang này</h3>
+      <ul>
+        <li>Mọi con số đối chiếu trực tiếp với paper gốc (36 bins · 1.5σ · 80% · r = 10 · 0.2 · <b>205,590 tests</b> = C(676,2) − 22,560 · 2π/30 · N = 500).</li>
+        <li>Ảnh tĩnh &amp; số liệu « thật »: OpenCV 5.0 chạy trên ảnh mẫu — sinh lại bằng <code>.venv/bin/python scripts/generate_assets.py</code> (đồng thời ghi <code>js/real_data.js</code> cho các tensor-box).</li>
+        <li>Widget tương tác: tính lại chính thuật toán bằng JavaScript ngay trong trình duyệt, không dùng ảnh vẽ tay.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="closing">Cảm ơn đã theo dõi — SIFT &amp; ORB: chạm tới « đôi mắt » của máy tính.</p>
+</section>
+
+</main>
+
+<footer id="foot">
+  <span><a href="../index.html" style="color:#7EB8F0;text-decoration:none">← Trang dự án Fundamentals Computer Vision</a></span>
+  <span style="display:block;margin-top:6px">SIFT &amp; ORB — trang giải thích tương tác · chạy trực tiếp qua <code>file://</code> và GitHub Pages, không cần server</span>
+</footer>
+
+<button id="backtop" aria-label="Về đầu trang">↑</button>
+<div id="tooltip" role="tooltip" hidden></div>
+
+<script src="js/sample_data.js"></script>
+<script src="js/real_data.js"></script>
+<script src="js/imgproc.js"></script>
+<script src="js/core.js"></script>
+<script src="js/widgets/pipeline.js"></script>
+<script src="js/widgets/gray.js"></script>
+<script src="js/widgets/pyramid.js"></script>
+<script src="js/widgets/logdog.js"></script>
+<script src="js/widgets/localize.js"></script>
+<script src="js/widgets/orientation.js"></script>
+<script src="js/widgets/bins.js"></script>
+<script src="js/widgets/harris.js"></script>
+<script src="js/widgets/greedy.js"></script>
+<script src="js/widgets/bits.js"></script>
+<script src="js/widgets/versus.js"></script>
+</body>
+</html>

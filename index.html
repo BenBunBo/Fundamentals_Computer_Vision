@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fundamentals Computer Vision — Project Page</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #fff; color: #0F2B46; font-family: Arial, Helvetica, sans-serif; font-size: 15px; line-height: 1.55; }
+  .hero { background: linear-gradient(rgba(11,32,54,.72), rgba(11,32,54,.86)), url("sift-orb-html/img/hero.jpg") center/cover no-repeat; color: #DCE7F5; padding: 78px 24px 66px; text-align: center; }
+  .kicker { font-size: 13px; font-weight: bold; letter-spacing: 2px; color: #9FB6D0; margin-bottom: 8px; }
+  h1 { font-size: 44px; color: #fff; line-height: 1.15; margin-bottom: 12px; }
+  .lead { font-size: 18px; max-width: 720px; margin: 0 auto 24px; }
+  .chips { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .chip { border-radius: 9px; border: 1.5px solid; padding: 9px 16px; font-size: 14px; font-weight: bold; color: #fff; text-decoration: none; background: rgba(11,18,32,.55); }
+  .chip.b { border-color: #2E86DE; } .chip.o { border-color: #E67E22; }
+  .chip:hover { background: rgba(46,134,222,.35); }
+  main { max-width: 980px; margin: 0 auto; padding: 46px 24px 30px; }
+  .feature { display: flex; gap: 30px; align-items: center; background: #F4F7FA; border: 1.5px solid #E3EAF2; border-radius: 16px; padding: 24px; flex-wrap: wrap; }
+  .feature img { flex: 1 1 340px; min-width: 280px; width: 100%; border-radius: 10px; box-shadow: 0 8px 22px rgba(15,43,70,.18); }
+  .feature-txt { flex: 1 1 320px; min-width: 280px; }
+  .feature-txt h2 { font-size: 24px; margin-bottom: 8px; }
+  .feature-txt h2 a { color: #0F2B46; text-decoration: none; }
+  .feature-txt h2 a:hover { color: #1B5FA8; }
+  .feature-txt p { font-size: 14.5px; color: #334155; }
+  .btn { display: inline-block; margin-top: 16px; background: #2E86DE; color: #fff; font-weight: bold; font-size: 15px; padding: 12px 22px; border-radius: 10px; text-decoration: none; }
+  .btn:hover { background: #1B5FA8; }
+  h3 { font-size: 20px; margin: 38px 0 14px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+  .card { background: #F4F7FA; border: 1px solid #E3EAF2; border-radius: 12px; padding: 16px 18px; }
+  .card b { display: block; margin-bottom: 4px; font-size: 15.5px; }
+  .card p { font-size: 13.5px; color: #475569; }
+  .card code { background: #EEF3F9; border-radius: 5px; padding: 1px 6px; font-size: .9em; }
+  .card a { color: #2E86DE; text-decoration: none; font-weight: bold; }
+  .card a:hover { text-decoration: underline; }
+  .note { margin-top: 30px; background: #EAF2FB; border: 1px solid #2E86DE; border-radius: 10px; padding: 12px 16px; font-size: 14px; }
+  .note code { background: #fff; border-radius: 5px; padding: 1px 6px; }
+  footer { background: #0B1220; color: #9FB6D0; text-align: center; padding: 26px 20px; font-size: 13px; margin-top: 30px; }
+  footer a { color: #7EB8F0; text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <p class="kicker">PROJECT PAGE</p>
+  <h1>Fundamentals Computer Vision</h1>
+  <p class="lead">Bài học nền tảng về local features — cách máy tính « nhìn » và ghép ảnh qua SIFT &amp; ORB, giải thích tới từng bước、từng ma trận.</p>
+  <div class="chips">
+    <a class="chip b" href="sift-orb-html/index.html">🌐 Mở trang SIFT &amp; ORB tương tác</a>
+    <a class="chip o" href="SIFT_ORB_Computer_Vision.pptx">📊 Tải bộ slide PowerPoint</a>
+  </div>
+</header>
+
+<main>
+  <div class="feature">
+    <img src="sift-orb-html/img/04_sift_keypoints.jpg" alt="Keypoint SIFT trên ảnh mẫu">
+    <div class="feature-txt">
+      <h2><a href="sift-orb-html/index.html">SIFT &amp; ORB — trang giải thích tương tác</a></h2>
+      <p>Trang web cuộn dọc (không cần server, mở trực tiếp cũng chạy): pipeline tổng quan của từng giải thuật rồi bấm sâu vào chi tiết — DoG thay LoG, keypoint localization, Harris tới từng ma trận, intensity centroid, rBRIEF 256-bit và con số 205,590 test.</p>
+      <p><b>11 widget tính lại đúng thuật toán bằng JavaScript</b> ngay trong trình duyệt: pyramid explorer, orientation walkthrough, tensor viewer Harris (M, λ₁, λ₂, R số thật), mô phỏng greedy rBRIEF, demo Hamming trên 256 bit thật…</p>
+      <a class="btn" href="sift-orb-html/index.html">Mở trang →</a>
+    </div>
+  </div>
+
+  <h3>Cấu trúc repository</h3>
+  <div class="grid">
+    <div class="card"><b>🌐 sift-orb-html/</b><p>Trang web tương tác: <code>index.html</code> + <code>style.css</code> + 11 widget JavaScript — chạy được qua <code>file://</code> và GitHub Pages.</p><a href="sift-orb-html/index.html">Mở →</a></div>
+    <div class="card"><b>📊 SIFT_ORB_Computer_Vision.pptx</b><p>Bộ slide 23 trang (13 MB) dựng bằng pptxgenjs — bản « trình bày » rút gọn của trang web.</p><a href="SIFT_ORB_Computer_Vision.pptx">Tải xuống →</a></div>
+    <div class="card"><b>🐍 scripts/</b><p><code>generate_assets.py</code> — OpenCV 5 chạy thật trên ảnh mẫu để sinh mọi hình minh hoạ + số liệu (<code>real_data.js</code>); <code>build_deck.js</code> — dựng pptx.</p></div>
+    <div class="card"><b>🖼 assets/</b><p>15+ hình PNG sinh tự động (pipeline, DoG, pyramid, matching, benchmark…).</p></div>
+  </div>
+
+  <div class="note"><b>Xem online:</b> bật GitHub Pages (<i>Settings → Pages → Deploy from branch: main / root</i>) thì trang dùng được tại <code>https://benbunbo.github.io/Fundamentals_Computer_Vision/sift-orb-html/</code>. Không bật cũng không sao — mọi thứ chạy được khi tải repo về mở trực tiếp.</div>
+</main>
+
+<footer>
+  <a href="https://github.com/BenBunBo/Fundamentals_Computer_Vision">github.com/BenBunBo/Fundamentals_Computer_Vision</a> · SIFT &amp; ORB: chạm tới « đôi mắt » của máy tính
+</footer>
+
+</body>
+</html>

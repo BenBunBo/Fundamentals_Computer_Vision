@@ -297,12 +297,6 @@ code { background: #EEF3F9; border-radius: 5px; padding: 1px 6px; font-size: .92
 .lsw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin: 0 3px 0 10px; vertical-align: -1px; }
 
 /* greedy */
-.gr-cards { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
-.gr-note { background: #FFF6E9; border: 1.5px solid #E67E22; border-radius: 10px; padding: 10px 14px; font-size: 13px; color: #0F2B46; line-height: 1.55; flex: 1 1 420px; }
-.gr-note b { color: #C05F0A; }
-.gr-stats { display: flex; gap: 14px; margin-top: 10px; flex-wrap: wrap; }
-.gr-stats .gs { background: #F4F7FA; border: 1px solid #E3EAF2; border-radius: 8px; padding: 6px 10px; font-size: 12px; color: #334155; }
-.gr-stats .gs b { display: block; font-size: 16px; color: #C05F0A; font-variant-numeric: tabular-nums; }
 .gl-panel { margin-top: 14px; border: 1.5px solid #F0C9A4; background: #FFFDF9; border-radius: 12px; padding: 12px 16px; }
 .gl-head b { font-size: 13.5px; color: #C05F0A; }
 .gl-canvas-cap { font-size: 11px; color: #94A3B8; margin-top: 2px; }

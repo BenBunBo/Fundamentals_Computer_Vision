@@ -1,5 +1,5 @@
-/* Widget ORB bước 4: thuật toán greedy của rBRIEF — học 256 cặp test ít tương quan.
-   Mô phỏng đúng thuật toán ORB paper §4.3 trên patch thật của ảnh mẫu (thu nhỏ quy mô). */
+/* Widget ORB bước 4: mô phỏng thuật toán greedy của rBRIEF (ORB paper §4.3) —
+   học 256 cặp test mean ≈ 0.5, ít tương quan, trên patch thật của ảnh mẫu (thu nhỏ quy mô). */
 "use strict";
 (() => {
   const mount = document.getElementById("w-greedy");
@@ -12,51 +12,22 @@
 
   function init() {
     mount.innerHTML = `
-      <div class="w-controls">
-        <button class="w-btn orange" id="gr-step">Chọn 1 cặp</button>
-        <button class="w-btn orange" id="gr-run">Chạy tới 256</button>
-        <button class="w-btn" id="gr-reset">Làm lại</button>
-        <span class="w-info" id="gr-prog"></span>
-      </div>
-      <div class="gr-cards">
-        <div>
-          <canvas id="gr-canvas" width="252" height="252"></canvas>
-          <p class="or-caption" style="max-width:252px">Nền: 1 trong ${N_PATCH} patch huấn luyện (31×31 pixel thật từ ảnh mẫu). Mỗi đoạn thẳng = 1 cặp ô 5×5 vừa được chọn (đoạn cam = chọn gần nhất).</p>
-        </div>
-        <div style="flex:1;min-width:0">
-          <div class="gr-note">
-            <b>⚠ Greedy này KHÔNG phải thuật toán matching.</b><br>
-            Đó là bước <b>« học descriptor »</b> chạy đúng một lần lúc <i>train</i> ORB: từ
-            <b>205,590</b> cặp khả dĩ trong patch 31×31 (cách đếm chi tiết ở hộp phía trên), greedy chọn <b>256</b> cặp
-            có mean ≈ 0.5 (variance cao nhất) và loại dần cặp tương quan cao, dựa trên
-            <b>300k keypoint huấn luyện</b> (PASCAL 2006). Pattern cố định này dùng cho <b>mọi ảnh</b>.
-            Matching giữa 2 ảnh vẫn là <b>Hamming + ratio test</b> — làm sau khi descriptor đã có.
-          </div>
-          <div class="gr-stats" id="gr-stats"></div>
-          <div class="card" style="margin-top:10px;padding:10px 12px">
-            <b style="font-size:13px">Mean &amp; variance của 1 test — từ đâu ra?</b>
-            <p style="font-size:12px;line-height:1.6">
-              1 test τ = 1 phép so sáng tối giữa 2 ô 5×5. Chạy τ qua <b>N patch huấn luyện</b> ⇒ N bit b₁ … b_N ∈ {0, 1}:<br>
-              • <b>mean μ(τ) = (b₁ + … + b_N) / N</b> — đơn giản là <i>tỉ lệ patch cho bit 1</i><br>
-              • bit là biến Bernoulli ⇒ <b>variance = μ·(1 − μ)</b> — đạt max <b>0.25 khi μ = 0.5</b><br>
-              μ = 0.5 ⇒ test chia đôi tập patch ⇒ « biết nhiều » nhất; μ ≈ 0 hoặc 1 ⇒ luôn cùng kết quả ⇒ vô dụng. Vì vậy greedy <b>sort theo |μ − 0.5| tăng dần</b> (tương đương variance giảm dần) rồi mới lọc tương quan.
-            </p>
-          </div>
-          <p class="links" style="margin-top:8px">📖 Thuật toán greedy đầy đủ: <a href="https://sites.cc.gatech.edu/classes/AY2024/cs4475_summer/images/ORB_an_efficient_alternative_to_SIFT_or_SURF.pdf" target="_blank" rel="noopener">ORB paper §4.3</a> · cách tính lại con số 205.590: <a href="https://gilscvblog.com/2013/10/04/a-tutorial-on-binary-descriptors-part-3-the-orb-descriptor" target="_blank" rel="noopener">Gil's CV Blog</a></p>
-        </div>
-      </div>
-
       <div class="gl-panel">
-        <div class="gl-head"><b>🔬 Soi từng bước greedy — test đang xét &amp; kết quả xét</b></div>
+        <div class="gl-head"><b>🔬 Mô phỏng thuật toán greedy — chọn 256 cặp trong 2.200 test ứng viên</b></div>
+        <div class="w-controls" style="margin-top:8px">
+          <button class="w-btn orange" id="gr-step">Chọn 1 cặp</button>
+          <button class="w-btn orange" id="gr-run">Chạy tới 256</button>
+          <button class="w-btn" id="gr-reset">Làm lại</button>
+        </div>
         <canvas id="gl-bits" width="620" height="64" style="max-width:100%"></canvas>
-        <p class="gl-canvas-cap">mỗi ô = kết quả (bit) của test này trên 1 patch huấn luyện — cam = bit 1, xám = bit 0</p>
+        <p class="gl-canvas-cap">mỗi ô = kết quả (bit) của test đang xét trên 1 patch huấn luyện — cam = bit 1, xám = bit 0</p>
         <div class="gl-nums" id="gl-nums"></div>
         <div class="gl-log" id="gl-log"></div>
+        <p class="links" style="margin-top:8px">📖 Thuật toán greedy đầy đủ: <a href="https://sites.cc.gatech.edu/classes/AY2024/cs4475_summer/images/ORB_an_efficient_alternative_to_SIFT_or_SURF.pdf" target="_blank" rel="noopener">ORB paper §4.3</a> · cách tính lại con số 205.590: <a href="https://gilscvblog.com/2013/10/04/a-tutorial-on-binary-descriptors-part-3-the-orb-descriptor" target="_blank" rel="noopener">Gil's CV Blog</a></p>
       </div>`;
 
-    const cv = mount.querySelector("#gr-canvas").getContext("2d");
-    const progEl = mount.querySelector("#gr-prog"), statsEl = mount.querySelector("#gr-stats");
     let patches = null, cand = null, chosen = [], ptr = 0, thresh = 0.9, done = false;
+    let lastEvent = null, nTried = 0, nRejected = 0;
 
     function rng(seed) { let s = seed; return () => (s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff; }
 
@@ -74,7 +45,7 @@
             g[dy * P + dx] = s.gray[(p.y + dy - 15) * s.w + (p.x + dx - 15)];
           return g;
         });
-        // mean 5×5 từng ô (676 ô) cho từng patch
+        // mean 5×5 từng ô (729 ô) cho từng patch
         const means = patches.map(g => {
           const m = new Float32Array(GRID * GRID);
           for (let j = 0; j < GRID; j++) for (let i = 0; i < GRID; i++) {
@@ -105,8 +76,7 @@
         cand.sort((x, y) => Math.abs(x.mean - 0.5) - Math.abs(y.mean - 0.5));
         ptr = 0; chosen = []; thresh = 0.9; done = false;
         nTried = 0; nRejected = 0; lastEvent = null;
-        draw();
-        stats();
+        drawInspector();
       });
     }
 
@@ -119,8 +89,6 @@
       if (va < 1e-9 || vb < 1e-9) return 0;
       return cov / Math.sqrt(va * vb);
     }
-
-    let lastEvent = null, nTried = 0, nRejected = 0;
 
     function stepOnce() {
       while (ptr < cand.length) {
@@ -171,57 +139,24 @@
       cv.fillText("patch huấn luyện 1 → " + n, 8, CH - 8);
       const ones = test.bits.reduce((a, b) => a + b, 0);
       const mu = ones / n, varr = mu * (1 - mu);
-      let h = "μ = " + ones + "/" + n + " = <b>" + mu.toFixed(3) + "</b> ⇒ variance = μ·(1−μ) = <b>" + varr.toFixed(3) + "</b> <span style='color:#94A3B8'>(max 0.25 khi μ = 0.5)</span>";
+      let h = "μ = " + ones + "/" + n + " = <b>" + mu.toFixed(3) + "</b> ⇒ variance = μ·(1−μ) = <b>" + varr.toFixed(3) + "</b> <span style='color:#94A3B8'>(max 0.25 khi μ = 0.5 — mean 0.5 nghĩa là test chia đôi tập patch, « biết nhiều » nhất; μ ≈ 0/1 là test vô dụng)</span>";
       if (e && e.c) {
         h += e.accepted
           ? " · corr max với R: <b>" + (e.maxIdx >= 0 ? e.maxCorr.toFixed(2) : "—") + "</b> ⇒ <b style='color:#0E9F6E'>CHỌN</b>"
           : " · corr với test #" + (e.maxIdx + 1) + " đã chọn = <b>" + e.maxCorr.toFixed(2) + "</b> &gt; ngưỡng " + thresh.toFixed(2) + " ⇒ <b style='color:#E02424'>LOẠI</b>";
       }
       numsEl.innerHTML = h;
-      logEl.innerHTML = "đã xét <b>" + nTried + "</b> test: <b style='color:#0E9F6E'>" + chosen.length + " CHỌN</b> · <b style='color:#E02424'>" + nRejected + " LOẠI</b> · ngưỡng tương quan: " + thresh.toFixed(2) + (e && e.relax ? " · <b>vừa nới ngưỡng +0.04 vì cạn pool</b>" : "");
+      logEl.innerHTML = "đã xét <b>" + nTried + "</b> test: <b style='color:#0E9F6E'>" + chosen.length + " CHỌN</b> · <b style='color:#E02424'>" + nRejected + " LOẠI</b> · ngưỡng tương quan: " + thresh.toFixed(2) + (done ? " · <b>xong — đủ 256</b>" : "") + (e && e.relax ? " · <b>vừa nới ngưỡng +0.04 vì cạn pool</b>" : "");
     }
 
-    function draw() {
-      const S = 8, off = 2;
-      cv.fillStyle = "#0F2B46"; cv.fillRect(0, 0, 252, 252);
-      if (patches) {
-        const tmp = document.createElement("canvas");
-        IMG.putGray(tmp, patches[0], P, P);
-        cv.imageSmoothingEnabled = false;
-        cv.drawImage(tmp, off, off, P * S, P * S);
-      }
-      const center = (idx) => ({ x: off + ((idx % GRID) + W / 2) * S, y: off + (((idx / GRID) | 0) + W / 2) * S });
-      chosen.forEach((c, i) => {
-        const A = center(c.a), B = center(c.b);
-        cv.beginPath(); cv.moveTo(A.x, A.y); cv.lineTo(B.x, B.y);
-        cv.strokeStyle = i === chosen.length - 1 ? "#E67E22" : "rgba(46,134,222,.8)";
-        cv.lineWidth = i === chosen.length - 1 ? 2.2 : 1;
-        cv.stroke();
-        cv.fillStyle = "rgba(46,134,222,.9)";
-        cv.fillRect(A.x - 1.5, A.y - 1.5, 3, 3); cv.fillRect(B.x - 1.5, B.y - 1.5, 3, 3);
-      });
-    }
-
-    function stats() {
-      const varr = chosen.length ? chosen.reduce((a, c) => a + c.varr, 0) / chosen.length : 0;
-      progEl.innerHTML = "đã chọn <b>" + chosen.length + " / " + N_BITS + "</b> · test còn lại: " + (cand.length - ptr) +
-        " · ngưỡng tương quan: " + thresh.toFixed(2) + (done ? " · <b>xong</b>" : "");
-      statsEl.innerHTML = `
-        <div class="gs"><b>${chosen.length}/256</b>bit đã chọn</div>
-        <div class="gs"><b>${(chosen.length ? varr.toFixed(3) : "—")}</b>variance TB (max 0.25)</div>
-        <div class="gs"><b>${cand ? cand.length.toLocaleString("vi") : "…"}</b>test ứng viên (demo)</div>
-        <div class="gs"><b>205,590</b>test trong paper</div>`;
-      drawInspector();
-    }
-
-    mount.querySelector("#gr-step").onclick = () => { if (!cand || done) return; stepOnce(); draw(); stats(); };
+    mount.querySelector("#gr-step").onclick = () => { if (!cand || done) return; stepOnce(); drawInspector(); };
     mount.querySelector("#gr-run").onclick = () => {
       if (!cand || done) return;
       let guard = 0;
       while (chosen.length < N_BITS && !done && guard++ < 4000) if (!stepOnce()) break;
-      draw(); stats();
+      drawInspector();
     };
-    mount.querySelector("#gr-reset").onclick = () => { if (cand) { ptr = 0; chosen = []; thresh = 0.9; done = false; nTried = 0; nRejected = 0; lastEvent = null; draw(); stats(); } };
+    mount.querySelector("#gr-reset").onclick = () => { if (cand) { ptr = 0; chosen = []; thresh = 0.9; done = false; nTried = 0; nRejected = 0; lastEvent = null; drawInspector(); } };
 
     build();
   }

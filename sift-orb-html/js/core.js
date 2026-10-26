@@ -8,7 +8,7 @@
 // để chắc chắn chạy trong mọi môi trường (kể cả webview không dispatch IO callback).
 function whenVisible(el, fn) {
   if (!el) return;
-  let fired = false, ticks = 0;
+  let fired = false;
   const inView = () => {
     const r = el.getBoundingClientRect();
     const vh = window.innerHeight || document.documentElement.clientHeight;
@@ -23,7 +23,8 @@ function whenVisible(el, fn) {
   const onSR = () => check();
   window.addEventListener("scroll", onSR, { passive: true });
   window.addEventListener("resize", onSR, { passive: true });
-  const iv = setInterval(() => { if (check() || ++ticks > 240) stop(); }, 250);
+  // không đặt hạn ticks: người đọc có thể cuộn tới widget sau vài phút — poll nhẹ (1 rect/250ms) rẻ hơn widget bị bỏ trống
+  const iv = setInterval(check, 250);
   function stop() {
     window.removeEventListener("scroll", onSR);
     window.removeEventListener("resize", onSR);

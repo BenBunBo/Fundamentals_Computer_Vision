@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Harris Corner Detector — Computer Vision (trang giải thích tương tác)</title>
+<meta name="description" content="Harris corner detector giải thích tới từng ma trận: E(u,v), khai triển Taylor, structure tensor M, eigenvalue, R = det − κ·trace², NMS — widget tính thật trên ảnh mẫu, đối chiếu OpenCV.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<noscript><p style="color:#fff;font-family:Arial;padding:2em">Trang này cần JavaScript để chạy các minh hoạ tương tác (nội dung chữ vẫn đọc được khi cuộn).</p></noscript>
+
+<!-- ================= HERO ================= -->
+<header id="hero">
+  <div class="hero-inner">
+    <p class="kicker light">COMPUTER VISION · PRIMITIVE DETECTORS · 1/2</p>
+    <h1 class="mega"><span class="c-blue">HARRIS</span> <span class="c-white">CORNER DETECTOR</span></h1>
+    <p class="lead">Detector « nguyên thuỷ » đầu tiên — tìm <b>góc</b>: điểm mà dịch cửa sổ theo <b>bất kỳ</b> hướng nào cũng làm ảnh đổi mạnh. Giải thích tới từng phép đạo hàm、từng ma trận.</p>
+    <div class="chips">
+      <span class="chip b">Harris &amp; Stephens — Alvey 1988</span>
+      <span class="chip g">Trang bạn đồng hành: <a href="canny.html" style="color:#fff">Canny Edge Detector →</a></span>
+    </div>
+    <p class="footnote light">Mọi minh hoạ được tính trực tiếp trong trình duyệt từ thuật toán thật trên ảnh mẫu · <b>di chuột hoặc bấm</b> vào các <span class="term light" data-term="corner">thuật ngữ có gạch chấm</span> để xem giải thích · pipeline tổng quan rồi bấm mở <b>chi tiết từng bước</b> · <a href="index.html" style="color:#9FB6D0">trang SIFT &amp; ORB →</a></p>
+  </div>
+</header>
+
+<!-- ================= NAV ================= -->
+<nav id="topnav">
+  <div class="nav-inner">
+    <span class="nav-brand">HARRIS&nbsp;DETECTOR</span>
+    <a href="#tongquan">Tổng quan</a>
+    <a href="#harris">4 bước</a>
+    <a href="#ungdung">Ứng dụng</a>
+    <a href="#tailieu">Tài liệu</a>
+    <a href="canny.html">Canny ↗</a>
+    <a href="index.html">SIFT &amp; ORB ↗</a>
+  </div>
+</nav>
+
+<main>
+
+<!-- ================= TỔNG QUAN ================= -->
+<section class="sec" id="tongquan">
+  <p class="kicker navy">TỔNG QUAN</p>
+  <h2 class="h1">Máy tính « nhìn » gì trong một bức ảnh? — phẳng, cạnh, góc</h2>
+  <figure class="imgcard center">
+    <img src="img/01_feature_concept.jpg" alt="Ba vùng ảnh: phẳng, cạnh, góc">
+    <figcaption>Ba vùng lấy từ ảnh mẫu: vùng <b>phẳng</b> — dịch đi đâu cũng chẳng đổi · <b>cạnh</b> — đổi theo một hướng, dịch dọc cạnh thì mơ hồ · <b>góc</b> — dịch theo mọi hướng đều đổi ⇒ định danh duy nhất</figcaption>
+  </figure>
+  <div class="grid-3">
+    <div><b class="c-blue">Phẳng — vô danh</b><p>Mọi pixel lân cận gần như cùng độ sáng: dịch cửa sổ đi đâu cũng thấy « như cũ ». Không mang thông tin định vị.</p></div>
+    <div><b class="c-blue">Cạnh — một hướng mơ hồ</b><p>Đổi sáng rõ theo <b>một</b> hướng (vuông góc cạnh), nhưng trôi <b>dọc</b> cạnh thì cảnh trước mắt chẳng đổi — tra được phương, không tra được vị trí.</p></div>
+    <div><b class="c-blue">Góc — định danh duy nhất</b><p>Hai cạnh gặp nhau: dịch theo <b>mọi</b> hướng đều làm vùng trước mắt thay đổi. Đây là « điểm neo » mà Harris đi tìm.</p></div>
+  </div>
+  <p style="margin-top:14px">Harris định lượng đúng nhận xét đó bằng <b>một đại lượng duy nhất</b>: đóng gói <span class="term" data-term="gradient">gradient</span> của cả cửa sổ pixel quanh mỗi điểm thành <b>ma trận 2×2</b> (<span class="term" data-term="structure-tensor">structure tensor</span>), đọc hai eigenvalue để hỏi: « dịch theo mọi hướng, ảnh đổi mạnh không? ». Cạnh thì sao? Đó là bài của <a href="canny.html">trang Canny Edge Detector →</a> — cùng nguyên liệu gradient, cách tổng hợp khác.</p>
+  <div class="callout blue">
+    <b>Trình tự lịch sử:</b> Canny (1986) và Harris (1988) là thế hệ detector đầu tiên — trước SIFT (1999/2004) và ORB (2011) của <a href="index.html">trang SIFT &amp; ORB</a>. ORB vẫn dùng Harris để xếp hạng keypoint, và SIFT bản chất là Harris + scale-space: Harris phát hiện góc ở <b>một</b> scale duy nhất, Lowe làm nó bất biến với kích thước. Hiểu Harris = hiểu phần lõi của mọi detector sau này.
+  </div>
+</section>
+
+<!-- ================= HARRIS ================= -->
+<section class="sec" id="harris">
+  <div class="sec-head dark-band">
+    <div class="sec-head-inner">
+      <div>
+        <p class="kicker">ALVEY VISION CONFERENCE · 1988</p>
+        <h2 class="mega c-blue">HARRIS</h2>
+        <p class="sub">A Combined Corner and Edge Detector</p>
+        <p class="lead">Chris Harris &amp; Mike Stephens. Ý tưởng: « điểm góc là điểm mà dịch cửa sổ theo <b>bất kỳ</b> hướng nào cũng làm ảnh đổi mạnh » — biến câu nói đó thành một công thức duy nhất qua khai triển Taylor và một ma trận 2×2.</p>
+        <p class="links light">📄 <a href="https://doi.org/10.1016/0734-189X(88)90022-1" target="_blank" rel="noopener">Paper gốc (Harris &amp; Stephens, 1988)</a> · 🌐 <a href="https://docs.opencv.org/3.4/dc/d0d/tutorial_py_harris_detector.html" target="_blank" rel="noopener">Tutorial OpenCV cornerHarris</a></p>
+      </div>
+      <div>
+        <div class="card" style="background:#1C3E63;border-color:#2A4E77;color:#DCE7F5">
+          <b style="color:#7EB8F0">MỘT CÔNG THỨC LÀ CHÍNH</b>
+          <p style="font-family:Georgia,serif;font-size:17px;color:#fff;margin:6px 0">E(u,v) ≈ [u v] M [u v]<sup>ᵀ</sup></p>
+          <p style="font-family:Georgia,serif;font-size:16px;color:#fff;margin:0 0 6px">R = det(M) − κ·trace²(M)</p>
+          <p style="font-size:12px;color:#9FB6D0;margin:0">M — structure tensor 2×2 · R — « điểm độ góc »: dương lớn = góc, âm = cạnh, ≈0 = phẳng</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="kicker blue" style="margin-top:34px">HARRIS · PIPELINE TỔNG QUAN</p>
+  <h3 class="h3">Từ ảnh xám tới danh sách góc — 4 trạm</h3>
+  <div class="chain">
+    <div class="card plain"><b>Ảnh xám</b><p>I(x, y) ∈ ℝ</p></div><span class="arr o">→</span>
+    <div class="card"><b style="color:#1B5FA8">① Gradient</b><p>I<sub>x</sub>, I<sub>y</sub> bằng đạo hàm (Sobel / sai phân)</p></div><span class="arr o">→</span>
+    <div class="card"><b style="color:#1B5FA8">② Cộng cửa sổ</b><p>M = Σ<sub>w</sub>[I<sub>x</sub>², I<sub>x</sub>I<sub>y</sub>; I<sub>x</sub>I<sub>y</sub>, I<sub>y</sub>²]</p></div><span class="arr o">→</span>
+    <div class="card"><b style="color:#1B5FA8">③ Điểm R</b><p>R = det − κ·trace²</p></div><span class="arr">→</span>
+    <div class="card plain"><b>④ Ngưỡng + NMS</b><p>giữ cực đại cục bộ ⇒ góc</p></div>
+  </div>
+  <div class="steps-ctl">
+    <span class="hint" style="margin:0">Bấm từng bước để mở chi tiết (có minh hoạ tương tác + ma trận số thật):</span>
+    <button class="w-btn" data-toggle-details="#harris-steps" data-mode="open">Mở tất cả</button>
+    <button class="w-btn" data-toggle-details="#harris-steps" data-mode="close">Đóng tất cả</button>
+  </div>
+
+  <div id="harris-steps">
+
+  <!-- ===== HARRIS BƯỚC 1 ===== -->
+  <details class="step" id="harris-b1">
+    <summary>
+      <span class="st-badge" style="--c:#2E86DE">1</span>
+      <span class="st-main"><b>Động lực: cửa sổ trượt và « năng lượng dịch chuyển » E(u, v)</b><small>Định nghĩa góc bằng 1 phép thử + khai triển Taylor biến nó thành ma trận — kèm widget tính E(u,v) thật trên ảnh</small></span>
+      <span class="st-open">mở chi tiết</span>
+    </summary>
+    <div class="step-body">
+      <p>Đặt một cửa sổ nhỏ (ví dụ 11×11) tại điểm (x, y), rồi <b>dịch ảnh</b> một vector (u, v) và đo tổng sai khác bình phương giữa cửa sổ mới và cũ — « năng lượng » E(u, v):</p>
+      <div class="callout blue formula">
+        <b>E(u, v) = Σ<sub>(x,y)∈W</sub> w(x, y) · [ I(x+u, y+v) − I(x, y) ]²</b>
+        <small>w(x, y) — trọng số cửa sổ (thường Gaussian, hoặc 1 = cửa sổ vuông đều) · (u, v) — vector dịch chuyển nhỏ · W — vùng cửa sổ</small>
+      </div>
+      <p>Ý nghĩa hình học: <b>E(u, v) là một bề mặt 3D</b> — trục ngang là hai phương dịch chuyển, chiều cao là « ảnh đổi bao nhiêu ». Ba loại vùng cho ba hình dạng khác hẳn nhau:</p>
+      <div class="grid-3">
+        <div><b class="c-blue">Vùng phẳng</b><p>E ≈ 0 theo mọi hướng — bề mặt là một cái đĩa bằng phẳng: dịch đâu cũng không ra gì.</p></div>
+        <div><b class="c-blue">Trên cạnh</b><p>E dốc ngang cạnh, nhưng <b>bằng phẳng dọc cạnh</b> — như một cái rãnh: dịch dọc rãnh không phát hiện được mình đã trôi.</p></div>
+        <div><b class="c-blue">Góc</b><p>E dốc theo <b>mọi</b> hướng — một cái chén: đứng đâu cũng trượt là biết ngay. Đây là chỗ « định danh duy nhất ».</p></div>
+      </div>
+      <p class="hint">Widget dưới tính E(u, v) <b>thật</b> — lấy đúng các pixel của ảnh mẫu, dịch theo từng (u, v) ∈ [−4, 4]², cộng sai khác bình phương của 121 pixel trong cửa sổ 11×11. Bấm 3 nút mẫu hoặc bấm thẳng lên ảnh để thử điểm bất kỳ; rê chuột lên ô heatmap để so E « thật » với xấp xỉ Taylor « lý thuyết ».</p>
+      <div class="widget" id="w-hc-shift"></div>
+
+      <h4 class="h4">Khai triển Taylor: biến tổng bình phương thành một dạng toàn phương</h4>
+      <p>Tính E(u, v) đúng nghĩa thì với mỗi điểm phải dịch ảnh và cộng lại hàng nghìn phép trừ — đắt và khó phân tích. Harris &amp; Stephens dùng <span class="term" data-term="taylor">khai triển Taylor</span> bậc 1 cho cường độ tại điểm dịch nhỏ:</p>
+      <div class="deriv-box">
+        <div class="dv-step"><span class="dv-n">1</span><div><b>Đạo hàm bậc nhất cho I(x+u, y+v):</b>
+          <span class="dv-math">I(x+u, y+v) ≈ I(x, y) + u·I<sub>x</sub> + v·I<sub>y</sub></span>
+          <small>trong đó I<sub>x</sub> = ∂I/∂x, I<sub>y</sub> = ∂I/∂y tính <b>tại pixel gốc</b> — chỉ 2 số cho mỗi pixel, không cần dịch ảnh</small></div></div>
+        <div class="dv-step"><span class="dv-n">2</span><div><b>Thay vào E — hằng số tự huỷ, còn dạng toàn phương:</b>
+          <span class="dv-math">E(u, v) ≈ Σ<sub>w</sub> [ u·I<sub>x</sub> + v·I<sub>y</sub> ]² = Σ<sub>w</sub> (u I<sub>x</sub> + v I<sub>y</sub>)(u I<sub>x</sub> + v I<sub>y</sub>)</span>
+          <small>I(x+u,y+v) − I(x,y) ≈ u·I<sub>x</sub> + v·I<sub>y</sub> — bình phương lên, mọi thứ còn lại đều là bình phương của 1 tổ hợp tuyến tính</small></div></div>
+        <div class="dv-step"><span class="dv-n">3</span><div><b>Viết lại thành dạng ma trận — « materialize » mọi hệ số vào M:</b>
+          <span class="dv-math">E(u, v) ≈ [u v] · M · [u v]<sup>ᵀ</sup>,&nbsp;&nbsp; M = Σ<sub>w</sub> [ I<sub>x</sub>² &nbsp; I<sub>x</sub>I<sub>y</sub> ; I<sub>x</sub>I<sub>y</sub> &nbsp; I<sub>y</sub>² ]</span>
+          <small>M là <span class="term" data-term="structure-tensor">structure tensor</span> (second moment matrix): tổng có trọng số của 3 tổ hợp đạo hàm — I<sub>x</sub>², I<sub>x</sub>I<sub>y</sub>, I<sub>y</sub>² — trong cửa sổ. Đối xứng, nửa xác định dương ⇒ hai eigenvalue ≥ 0</small></div></div>
+        <div class="dv-step"><span class="dv-n">4</span><div><b>Đọc E từ M mà không cần dịch ảnh:</b> E chỉ phụ thuộc hình dạng của M — và hình dạng của ma trận đối xứng 2×2 được mô tả trọn vẹn bởi <b>hai eigenvalue λ₁, λ₂</b>. Từ đây mọi câu hỏi về E trở thành câu hỏi đại số về λ.</div></div>
+      </div>
+      <div class="callout blue"><b>Sai số của xấp xỉ:</b> Taylor bậc 1 chỉ đúng khi (u, v) nhỏ. Widget phía trên cho phép so trực tiếp: ở |u| ≤ 1–2, E thật và Ê = [u v]M[u v]ᵀ gần như trùng <i>sau khi đồng thang</i> — gradient sai phân I(x+1) − I(x−1) = 2·∂I nên [u v]M[u v]ᵀ phải chia 4 (widget đã làm sẵn, kèm giải thích); dịch xa hơn thì xấp xỉ lệch dần — đây chính là lý do Harris là detector « cục bộ » và nhạy với giới hạn cửa sổ. Lưu ý: hệ số 4 này <b>không ảnh hưởng Harris detection</b> — R = det − κ·trace² chỉ nhân lên đều ×16, thứ hạng các điểm giữ nguyên.</div>
+    </div>
+  </details>
+
+  <!-- ===== HARRIS BƯỚC 2 ===== -->
+  <details class="step" id="harris-b2">
+    <summary>
+      <span class="st-badge" style="--c:#2E86DE">2</span>
+      <span class="st-main"><b>Structure tensor M — soi eigenvalue để phân loại phẳng / cạnh / góc</b><small>Tensor viewer: từng pixel đạo hàm, từng ô của M, λ₁ λ₂ và ellipse — số thật trên ảnh mẫu</small></span>
+      <span class="st-open">mở chi tiết</span>
+    </summary>
+    <div class="step-body">
+      <p>Vì M đối xứng nên chéo hoá được: <b>M = P<sup>ᵀ</sup>·diag(λ₁, λ₂)·P</b> với P là ma trận xoay đưa về hệ trục chính. Trong hệ trục đó, E viết lại cực gọn — mỗi hướng chỉ còn một hệ số:</p>
+      <div class="callout blue formula">
+        <b>E ≈ λ₁·p² + λ₂·q²</b>
+        <small>(p, q) — toạ độ theo 2 trục chính của M · λᵢ chính là « độ cong » của bề mặt E theo trục thứ i: λ càng lớn ⇒ cửa sổ dịch theo hướng đó càng « bị phạt »</small>
+      </div>
+      <p>Đây là chỗ <span class="term" data-term="eigenvalue">eigenvalue</span> không còn là khái niệm trừu tượng nữa: <b>λ₁ = độ dốc E theo hướng dữ nhất, λ₂ = theo hướng bằng phẳng nhất</b>. Ba trường hợp phân loại luôn:</p>
+      <div class="tb-table-wrap">
+        <table class="cmp">
+          <tr><th>Trường hợp</th><th>Eigenvalue</th><th>Hình dạng E(u, v)</th><th>Kết luận</th></tr>
+          <tr><td>Vùng phẳng</td><td>λ₁ ≈ λ₂ ≈ 0</td><td>đĩa bằng — mọi hướng đều bằng phẳng</td><td>bỏ — không mang thông tin</td></tr>
+          <tr><td>Cạnh</td><td>λ₁ ≫ λ₂ ≈ 0</td><td>rãnh — dốc ngang cạnh, bằng dọc cạnh</td><td>bỏ — mơ hồ khi trôi dọc cạnh</td></tr>
+          <tr><td>Góc</td><td>λ₁, λ₂ đều lớn</td><td>chén — dốc theo mọi hướng</td><td><b>giữ — đây là keypoint</b></td></tr>
+        </table>
+      </div>
+      <p class="hint">Bấm 3 nút mẫu hoặc rê chuột lên ảnh: widget tính gradient <b>từng pixel</b> trong cửa sổ 7×7 (sai phân trung tâm), cộng thành M, giải eigenvalue, vẽ ellipse và xếp loại ngay tại điểm đó — cùng một chuỗi phép tính mà OpenCV <code>cornerHarris</code> làm.</p>
+      <div class="widget" id="w-hc-tensor"></div>
+
+      <div class="tensor-box">
+        <div class="tb-title">📐 Ma trận ở Bước 2 — con số thật tại góc mạnh nhất của ảnh mẫu (x, y) = (<span data-hcr="harris.x"></span>, <span data-hcr="harris.y"></span>), cửa sổ 7×7, κ = 0.04</div>
+        <div class="tb-grid">
+          <div class="tb-item"><b>∇I ∈ ℝ^(7×7×2)</b><p>gradient (I<sub>x</sub>, I<sub>y</sub>) của 49 pixel — tính bằng sai phân trung tâm I<sub>x</sub> = I(x+1) − I(x−1) (bản gốc Harris &amp; Stephens cũng dùng hiệu 2 pixel kề, không chia 2)</p></div>
+          <div class="tb-item"><b>M = Σ<sub>w</sub>[I<sub>x</sub>², I<sub>x</sub>I<sub>y</sub>; I<sub>x</sub>I<sub>y</sub>, I<sub>y</sub>²]</b><p>structure tensor 2×2 — tổng 49 ô (bảng bên phải). det = <b><span data-hcr="harris.det" data-fmt="sci"></span></b> · trace = <b><span data-hcr="harris.trace" data-fmt="sci"></span></b></p></div>
+          <div class="tb-item"><b>λ₁, λ₂</b><p>eigenvalue của M: λ₁ = <b><span data-hcr="harris.lam1" data-fmt="sci"></span></b>, λ₂ = <b><span data-hcr="harris.lam2" data-fmt="sci"></span></b> — cả hai lớn và cùng bậc (tỉ số chỉ 1.4:1) ⇒ góc thật, cong đều mọi hướng</p></div>
+          <div class="tb-item"><b>R = det − 0.04·trace²</b><p>= <b><span data-hcr="harris.R" data-fmt="sci"></span></b> — dương lớn ⇒ góc. Đây cũng là pixel có R lớn nhất toàn ảnh</p></div>
+          <div class="tb-mat"><small>M (2×2) tại (x, y) = (<span data-hcr="harris.x"></span>, <span data-hcr="harris.y"></span>)</small><div data-hcr-mat="harris.M" data-fmt="sci"></div></div>
+        </div>
+      </div>
+      <p class="footnote">Gradient của widget dùng sai phân trung tâm — đúng tinh thần bản gốc 1988; OpenCV <code>cornerHarris</code> dùng Sobel 3×3 (mượt hơn, xem so sánh ở Bước 4). Trên trang <a href="index.html#orb-b2">SIFT &amp; ORB · ORB Bước 2</a> cũng có tensor viewer Harris này cho pipeline FAST → Harris.</p>
+    </div>
+  </details>
+
+  <!-- ===== HARRIS BƯỚC 3 ===== -->
+  <details class="step" id="harris-b3">
+    <summary>
+      <span class="st-badge" style="--c:#2E86DE">3</span>
+      <span class="st-main"><b>Từ eigenvalue tới R = det − κ·trace² — vì sao công thức này « khôn ngoan »</b><small>Chứng minh R &gt; 0 ⟺ λ₂/λ₁ &gt; t*(κ); vì sao κ phải &lt; 0.25; Shi–Tomasi và các biến thể — kèm bản đồ mặt phẳng eigenvalue của ảnh thật</small></span>
+      <span class="st-open">mở chi tiết</span>
+    </summary>
+    <div class="step-body">
+      <p>Ngây thơ nhất là phân loại trực tiếp bằng λ: « hai λ đều lớn ». Nhưng giải eigenvalue đắt, và ngưỡng « lớn » phụ thuộc độ tương phản ảnh. Harris &amp; Stephens nhận ra mọi thông tin cần nằm trong <b>det(M) = λ₁λ₂</b> và <b>trace(M) = λ₁ + λ₂</b> — hai đại lượng tính <b>không cần giải eigen</b>, chỉ tốn vài phép nhân:</p>
+      <div class="callout blue formula">
+        <b>R = det(M) − κ·trace²(M) = λ₁λ₂ − κ(λ₁ + λ₂)²</b>
+        <small>κ — hằng số thực nghiệm, Harris đề xuất κ = 0.04–0.06 · R lớn dương ⇒ góc · R âm mạnh ⇒ cạnh · R ≈ 0 ⇒ phẳng</small>
+      </div>
+
+      <h4 class="h4">Đi sâu: miền R &gt; 0 trên mặt phẳng (λ₁, λ₂) — chứng minh trọn vẹn</h4>
+      <div class="deriv-box">
+        <div class="dv-step"><span class="dv-n">1</span><div><b>Chuẩn hoá theo tỉ số.</b> Đặt t = λ₂/λ₁ ∈ [0, 1] (λ₁ ≥ λ₂ ≥ 0). Chia cả hai vế cho λ₁² &gt; 0:
+          <span class="dv-math">R &gt; 0 ⟺ t − κ(1 + t)² &gt; 0</span>
+          <small>R chỉ phụ thuộc <b>tỉ số anisotropy</b> t — đúng nghĩa « độ góc không phụ thuộc độ tương phản, chỉ phụ thuộc độ lệch giữa hai hướng »</small></div></div>
+        <div class="dv-step"><span class="dv-n">2</span><div><b>Đưa về phương trình bậc 2 theo t:</b>
+          <span class="dv-math">t − κ(1 + t)² &gt; 0 ⟺ κt² + (2κ − 1)t + κ &lt; 0</span>
+          <small>nhân −1 và sắp xếp — parabola hệ số cao nhất κ &gt; 0 nên « mở lên », bất đẳng thức &lt; 0 đúng <b>giữa hai nghiệm</b></small></div></div>
+        <div class="dv-step"><span class="dv-n">3</span><div><b>Hai nghiệm:</b>
+          <span class="dv-math">t± = [ (1 − 2κ) ± √(1 − 4κ) ] / (2κ)</span>
+          <small>tích hai nghiệm = κ/κ = 1 ⇒ t₊ = 1/t₋ — miền góc <b>đối xứng hoàn toàn</b> khi đổi chỗ λ₁ ↔ λ₂ (như mong đợi, vì góc không phân biệt hướng nào)</small></div></div>
+        <div class="dv-step"><span class="dv-n">4</span><div><b>Kết luận:</b> R &gt; 0 ⟺ λ₂/λ₁ ∈ (t*, 1/t*) với <b>t* = [(1 − 2κ) − √(1 − 4κ)] / (2κ)</b>. Số cụ thể:
+          <span class="dv-math">κ = 0.04 ⇒ t* ≈ 0.0436 (chấp nhận tới 1 : 22.9)&nbsp;&nbsp;·&nbsp;&nbsp;κ = 0.06 ⇒ t* ≈ 0.0683 (1 : 14.6)</span>
+          <small>κ càng lớn càng khắt khe: bắt hai λ phải « cùng bậc » hơn. Và điều kiện có nghiệm: <b>1 − 4κ ≥ 0 ⟺ κ ≤ 0.25</b> — với κ ≥ 0.25 parabola luôn ≥ 0 ⇒ R ≤ 0 mọi nơi ⇒ <b>không còn góc nào được chấp nhận</b>. Đó là giới hạn cứng của công thức, không phải tùy chọn.</small></div></div>
+      </div>
+      <p class="hint">Widget dưới rải <b>mặt phẳng eigenvalue thật</b>: mỗi điểm màu là một pixel của ảnh mẫu với cặp (λ₁, λ₂) đo được trong cửa sổ 7×7. Kéo thanh κ để thấy 2 đường biên R = 0 (2 tia qua gốc toạ độ với độ dốc t* và 1/t*) quét qua đám điểm — đồng thời xem nơi Shi–Tomasi (min λ) đặt ngưỡng. Bấm vào một điểm để đưa nó vào tensor viewer và widget E(u, v) ở trên.</p>
+      <div class="widget" id="w-hc-lam"></div>
+
+      <h4 class="h4">Các biến thể điểm số — cùng M, khác cách đọc</h4>
+      <div class="tb-table-wrap">
+        <table class="cmp">
+          <tr><th>Điểm số</th><th>Công thức</th><th>Nhận xét</th></tr>
+          <tr><td>Harris &amp; Stephens 1988</td><td>R = det − κ·trace²</td><td>chuẩn gốc; κ = 0.04–0.06; nhanh nhất (không sqrt)</td></tr>
+          <tr><td>Shi–Tomasi 1994 (« Good Features to Track »)</td><td>R = min(λ₁, λ₂)</td><td>giữ nếu min λ &gt; ngưỡng — trực quan « cả hai hướng đều phải cong », chất lượng điểm đo được đúng đơn vị của gradient; OpenCV <code>goodFeaturesToTrack</code> dùng cái này</td></tr>
+          <tr><td>Noble 1989</td><td>R = det / (trace + ε)</td><td>phân số — tự cân giữa det và trace, khỏi chọn κ</td></tr>
+          <tr><td>Bất biến sáng ×a</td><td>det / trace²</td><td>ảnh sáng gấp a lần ⇒ I<sub>x</sub>, I<sub>y</sub> ×a ⇒ M ×a² ⇒ det ×a⁴, trace² ×a⁴ ⇒ <b>det/trace² bất biến hoàn toàn</b> — còn R, min(λ) đều ×a² (ngưỡng phải theo dõi độ sáng ảnh!)</td></tr>
+        </table>
+      </div>
+      <p class="footnote">Shi &amp; Tomasi (1994) — <a href="https://cseweb.ucsd.edu/classes/sp02/c253/papers/shitomasi94good.pdf" target="_blank" rel="noopener">Good Features to Track (CVPR 1994)</a> · Noble (1989) — « Descriptions of image surfaces » (PhD thesis, Oxford).</p>
+    </div>
+  </details>
+
+  <!-- ===== HARRIS BƯỚC 4 ===== -->
+  <details class="step" id="harris-b4">
+    <summary>
+      <span class="st-badge" style="--c:#2E86DE">4</span>
+      <span class="st-main"><b>Pipeline đầy đủ trên ảnh thật: R-map, ngưỡng, non-max suppression</b><small>Kéo slider κ / ngưỡng / cửa sổ — xem bản đồ nhiệt R và danh sách góc thay đổi tức thì</small></span>
+      <span class="st-open">mở chi tiết</span>
+    </summary>
+    <div class="step-body">
+      <ul class="bullets wide">
+        <li>Tính R cho <b>mọi pixel</b> (thực ra là mọi pixel cách biên ≥ cửa sổ/2) ⇒ một bản đồ nhiệt R cùng kích thước ảnh</li>
+        <li><b>Ngưỡng:</b> chỉ giữ R &gt; ngưỡng — nên tính ngưỡng <b>tương đối</b> (% của max R hoặc trung vị) thay vì tuyệt đối, vì R đổi bậc theo độ tương phản ảnh (×a² khi sáng ×a)</li>
+        <li><b><span class="term" data-term="nms">Non-max suppression (NMS)</span>:</b> một góc thật kéo dài thành « đồi R » nhiều pixel — chỉ giữ pixel là max cục bộ 3×3, mỗi góc được đếm <b>đúng một lần</b></li>
+        <li>(tuỳ chọn) khoảng cách tối thiểu giữa các góc — <code>cv2.goodFeaturesToTrack</code> còn làm thêm bước này</li>
+      </ul>
+      <p class="hint">Kéo slider để xem: κ đổi ⇒ biên R = 0 di chuyển; ngưỡng cao ⇒ ít góc hơn; tắt NMS ⇒ mỗi góc thành « chùm » nhiều điểm dính nhau.</p>
+      <div class="widget" id="w-hc-full"></div>
+
+      <h4 class="h4">Đối chiếu với OpenCV trên cùng ảnh mẫu</h4>
+      <div class="stat-row">
+        <div><b class="big c-blue"><span data-hcr="harris.nmsN"></span></b><small>góc của trang này (κ = 0.04, ngưỡng 1% max, sai phân trung tâm)</small></div>
+        <div><b class="big c-blue"><span data-hcr="harris.cvNmsN"></span></b><small>góc của cv2.cornerHarris (Sobel 3×3, cùng κ, cùng ngưỡng + NMS)</small></div>
+        <div><b class="big c-blue"><span data-hcr="harris.nAbove" data-fmt="int"></span></b><small>pixel vượt ngưỡng <b>trước</b> NMS — mỗi góc thật là cả một « đồi »</small></div>
+      </div>
+      <div class="callout blue">
+        <b>Vì sao hai con số gần mà không bằng nhau?</b> Cùng công thức R nhưng nguyên liệu gradient khác: sai phân trung tâm (I(x+1) − I(x−1)) vs <span class="term" data-term="sobel">Sobel 3×3</span> (có thêm làm mượt [1,2,1] vuông góc). Sobel khử nhiễu tốt hơn nên vài điểm méo bén hơn/kém bén hơn — số góc lệch nhau vài %. Bản gốc 1988 dùng đúng sai phân trung tâm; thực tế hiện đại dùng Sobel vì ảnh thật có nhiễu.
+        <small>Trong OpenCV: <code>cv2.cornerHarris(img, blockSize=2, ksize=3, k=0.04)</code> — blockSize là cỡ cửa sổ cộng M, ksize là cỡ kernel Sobel. Số tham chiếu sinh bởi <code>scripts/generate_hc_assets.py</code> (OpenCV 5.0, ảnh 640×360).</small>
+      </div>
+
+      <h4 class="h4">Tính chất — và giới hạn dẫn tới SIFT</h4>
+      <div class="grid-3">
+        <div><b class="c-blue">Bất biến xoay ✓</b><p>Xoay ảnh θ: gradient xoay theo, ∇I′ = R<sub>θ</sub>∇I ⇒ M′ = R<sub>θ</sub> M R<sub>θ</sub><sup>ᵀ</sup> — phép đồng dạng, giữ nguyên eigenvalue ⇒ R không đổi. (Cửa sổ phải « tròn »: Gaussian; cửa sổ vuông của OpenCV chỉ xấp xỉ.)</p></div>
+        <div><b class="c-blue">Bất biến dịch + đổi sáng ✓</b><p>Dịch ảnh không đổi gradient. Sáng cộng thêm b: I′ = I + b ⇒ ∇I′ = ∇I, R nguyên vẹn. Sáng nhân a: R ×a² — nắm được qua ngưỡng tương đối hoặc det/trace².</p></div>
+        <div><b class="c-blue">KHÔNG bất biến scale ✗ → SIFT</b><p>Phóng to ảnh, « góc » thành cạnh cong — cửa sổ cỡ 7×7 giờ nằm trọn trong một cạnh ⇒ λ₂ sụp xuống, R âm. Lowe giải quyết bằng scale-space DoG — chính là Bước 1 của <a href="index.html#sift-b1">SIFT</a>.</p></div>
+      </div>
+      <p class="footnote">Phiên bản scale: Harris–Laplace (Mikolajczyk &amp; Schmid 2004) chọn σ cho từng góc bằng cực trị LoG — và chính phân tích eigen của structure tensor là phép « lọc cạnh » mà SIFT mượn để loại keypoint nằm trên cạnh (tr²/det ≥ (r+1)²/r, xem <a href="index.html#sift-b2">SIFT Bước 2</a>).</p>
+    </div>
+  </details>
+
+  </div><!-- /harris-steps -->
+</section>
+
+<!-- ================= ỨNG DỤNG ================= -->
+<section class="sec alt" id="ungdung">
+  <p class="kicker navy">ỨNG DỤNG</p>
+  <h2 class="h1">Góc Harris chạy đâu trong đời thực?</h2>
+  <div class="apps">
+    <div class="app"><span class="appicon" style="--c:#2E86DE">TRK</span><div><b>Video tracking (KLT)</b><p><code>goodFeaturesToTrack</code> (Shi–Tomasi = biến thể Harris) + optical flow LK: theo dõi vật thể qua từng frame — cơ sở của tracking mọi camera.</p></div></div>
+    <div class="app"><span class="appicon" style="--c:#E67E22">SLAM</span><div><b>SLAM &amp; robot tự hành</b><p>ORB-SLAM cần điểm neo ổn định qua nghìn frame — FAST + Harris ranking là bộ detector của nó.</p></div></div>
+    <div class="app"><span class="appicon" style="--c:#0E9F6E">PANO</span><div><b>Panorama / image stitching</b><p>Ghép ảnh chụp liền nhau: tìm góc ở mọi tấm, match, ước lượng homography — phone camera làm mỗi lần bạn chụp panorama.</p></div></div>
+    <div class="app"><span class="appicon" style="--c:#2E86DE">3D</span><div><b>3D reconstruction (SfM)</b><p>Khôi phục hình học 3D từ nhiều ảnh góc chụp khác nhau — toàn bộ dựa trên các cặp điểm tương ứng.</p></div></div>
+    <div class="app"><span class="appicon" style="--c:#E67E22">AR</span><div><b>Thực tế tăng cường</b><p>Gắn vật 3D lên marker / cảnh thật: detect góc → match → tính pose của camera.</p></div></div>
+    <div class="app"><span class="appicon" style="--c:#0E9F6E">REG</span><div><b>Canh ảnh y khoa &amp; viễn thám</b><p>Registration 2 ảnh chụp khác thời điểm / máy — dùng các cặp góc tương ứng làm mỏ neo biến dạng.</p></div></div>
+  </div>
+  <div class="callout blue" style="margin-top:20px">
+    <b>Cạnh (edge) thì sao?</b> Harris còn đoán được luôn: R âm mạnh = « sống trên cạnh ». Muốn một detector cạnh chuẩn mực — tối ưu hoá SNR/định vị, NMS theo hướng, hysteresis — sang <a href="canny.html">trang Canny Edge Detector →</a>.
+  </div>
+</section>
+
+<!-- ================= TÀI LIỆU ================= -->
+<section class="sec dark" id="tailieu">
+  <p class="kicker">TÀI LIỆU · PAPER GỐC</p>
+  <h2 class="h1 c-white">Đọc sâu hơn — mọi công thức trên trang đều tra được tới nguồn</h2>
+  <div class="refs">
+    <div class="ref-col">
+      <h3>Papers gốc</h3>
+      <ul>
+        <li><a href="https://doi.org/10.1016/0734-189X(88)90022-1" target="_blank" rel="noopener">Harris &amp; Stephens (1988) — A Combined Corner and Edge Detector (Alvey)</a> <span class="mut">· E(u,v), M, R = det − κ·trace², κ = 0.04–0.06</span></li>
+        <li><a href="https://cseweb.ucsd.edu/classes/sp02/c253/papers/shitomasi94good.pdf" target="_blank" rel="noopener">Shi &amp; Tomasi (1994) — Good Features to Track, CVPR</a> <span class="mut">· min(λ₁, λ₂) thay cho R</span></li>
+        <li><a href="https://link.springer.com/article/10.1023/A:1011193214231" target="_blank" rel="noopener">Mikolajczyk &amp; Schmid (2004) — Scale &amp; Affine Invariant Interest Point Detectors, IJCV</a> <span class="mut">· Harris-Laplace: gán scale cho góc Harris</span></li>
+        <li><a href="https://link.springer.com/article/10.1007/BFb0056195" target="_blank" rel="noopener">Lindeberg (1994) — Scale-Space Theory in Computer Vision</a> <span class="mut">· lý thuyết nền về scale</span></li>
+        <li><a href="https://doi.org/10.1109/TPAMI.1986.4767851" target="_blank" rel="noopener">Canny (1986) — A Computational Approach to Edge Detection, TPAMI</a> <span class="mut">· trang bạn đồng hành: <a href="canny.html" style="color:#7EB8F0">Canny →</a></span></li>
+      </ul>
+    </div>
+    <div class="ref-col">
+      <h3>Tutorial &amp; sách</h3>
+      <ul>
+        <li><a href="https://docs.opencv.org/3.4/dc/d0d/tutorial_py_harris_detector.html" target="_blank" rel="noopener">OpenCV — Harris corner</a> · <a href="https://docs.opencv.org/3.4/d4/d8c/tutorial_py_shi_tomasi.html" target="_blank" rel="noopener">Shi-Tomasi</a> · <a href="https://docs.opencv.org/3.4/d2/d00/tutorial_py_sobel_derivatives.html" target="_blank" rel="noopener">Sobel derivatives</a></li>
+        <li><a href="https://szeliski.org/Book/" target="_blank" rel="noopener">Szeliski — Computer Vision: Algorithms and Applications</a> <span class="mut">· §4.3 edge &amp; corner detection, §7.1 keypoints</span></li>
+        <li><a href="https://en.wikipedia.org/wiki/Corner_detection" target="_blank" rel="noopener">Wikipedia — Corner detection</a> · <a href="https://en.wikipedia.org/wiki/Structure_tensor" target="_blank" rel="noopener">Structure tensor</a></li>
+      </ul>
+      <h3>Về trang này</h3>
+      <ul>
+        <li>Toàn bộ widget tính lại đúng thuật toán bằng JavaScript ngay trong trình duyệt trên ảnh mẫu (640×360, nhúng base64) — không có ảnh vẽ tay.</li>
+        <li>Số đối chiếu OpenCV sinh bởi <code>scripts/generate_hc_assets.py</code> (OpenCV 5.0) → <code>js/hc_data.js</code>; pipeline Python chép y hệt pipeline JS để bảo chứng từng số.</li>
+        <li>Trang bạn đồng hành: <a href="canny.html">Canny Edge Detector</a> · <a href="index.html">SIFT &amp; ORB</a>.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="closing">Harris 1988: biến « nhìn thấy góc » thành một công thức đại số — và cả computer vision đổi cách nhìn.</p>
+</section>
+
+</main>
+
+<footer id="foot">
+  <span>
+    <a href="../index.html" style="color:#7EB8F0;text-decoration:none">← Trang dự án Fundamentals Computer Vision</a>
+    &nbsp;·&nbsp;
+    <a href="canny.html" style="color:#7EB8F0;text-decoration:none">Trang Canny Edge Detector →</a>
+    &nbsp;·&nbsp;
+    <a href="index.html" style="color:#7EB8F0;text-decoration:none">Trang SIFT &amp; ORB →</a>
+  </span>
+  <span style="display:block;margin-top:6px">Harris corner detector — trang giải thích tương tác · chạy trực tiếp qua <code>file://</code> và GitHub Pages, không cần server</span>
+</footer>
+
+<button id="backtop" aria-label="Về đầu trang">↑</button>
+<div id="tooltip" role="tooltip" hidden></div>
+
+<script src="js/sample_data.js"></script>
+<script src="js/hc_data.js"></script>
+<script src="js/imgproc.js"></script>
+<script src="js/core.js"></script>
+<script src="js/hc_common.js"></script>
+<script src="js/hc_harris.js"></script>
+</body>
+</html>

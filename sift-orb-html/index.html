@@ -198,10 +198,12 @@
       <h4 class="h4">Image pyramid: cùng một phép biến đổi, lặp lại ở mọi kích thước ảnh</h4>
       <p class="hint">Bấm trực tiếp vào ô (octave × level) trong sơ đồ pyramid — hoặc kéo thanh level — để xem ảnh Gaussian / DoG thật tính trong trình duyệt, kèm vị trí các ứng viên keypoint.</p>
       <div class="widget" id="w-pyramid"></div>
-      <figure class="imgcard center">
-        <img src="img/03_octaves.jpg" alt="Ba octave của pyramid: ảnh thu nhỏ dần, mỗi octave là chuỗi σ tăng dần">
-        <figcaption>Hình minh hoạ: <b>3 octave</b> của pyramid (ảnh thật) — mỗi octave ảnh thu nhỏ ½ và chuỗi σ tăng theo k = √2. Chi tiết nhỏ (gân hoa, hạt bụi) chỉ nổi bật ở octave gốc; cấu trúc lớn (bông hoa cả cụm) nổi bật ở octave đã thu nhỏ — « Nhiều octave ⇒ nhiều scale ».</figcaption>
-      </figure>
+
+      <div class="grid-3 tight">
+        <div><b class="c-blue">Octave = « tầng » của pyramid</b><p>Ảnh được thu nhỏ ½ mỗi octave; σ khởi đầu cũng nhân đôi, để DoG không lặp lại vô ích.</p></div>
+        <div><b class="c-blue">Nhiều octave ⇒ nhiều scale</b><p>Chi tiết nhỏ chỉ nổi bật ở octave gốc; vật thể lớn chỉ nổi bật ở octave đã thu nhỏ.</p></div>
+        <div><b class="c-blue">Keypoint mạnh = ổn định nhiều scale</b><p>Điểm là cực trị qua nhiều mức σ thường chịu được biến đổi hình học tốt hơn.</p></div>
+      </div>
 
       <h4 class="h4">Hạ mẫu giữa các octave: làm bằng gì? Có phải « stride của kernel » không?</h4>
       <p>Trả lời ngắn: <b>không phải <span class="term" data-term="stride">stride</span>.</b> Stride là khái niệm của CNN (kernel « nhảy » dài sau mỗi bước nhân chập). Ở đây hạt nhân <span class="term" data-term="gaussian">Gaussian</span> vẫn quét <b>từng pixel</b> (bước 1); việc thu nhỏ ảnh là một <b>bước riêng — <span class="term" data-term="decimation">hạ mẫu (decimation)</span></b> — và luôn diễn ra <b>sau</b> khi làm mờ:</p>
@@ -221,11 +223,6 @@
         </div>
       </div>
 
-      <div class="grid-3 tight">
-        <div><b class="c-blue">Octave = « tầng » của pyramid</b><p>Ảnh được thu nhỏ ½ mỗi octave; σ khởi đầu cũng nhân đôi, để DoG không lặp lại vô ích.</p></div>
-        <div><b class="c-blue">Nhiều octave ⇒ nhiều scale</b><p>Chi tiết nhỏ chỉ nổi bật ở octave gốc; vật thể lớn chỉ nổi bật ở octave đã thu nhỏ.</p></div>
-        <div><b class="c-blue">Keypoint mạnh = ổn định nhiều scale</b><p>Điểm là cực trị qua nhiều mức σ thường chịu được biến đổi hình học tốt hơn.</p></div>
-      </div>
       <p class="footnote">Paper dùng s = 3 khoảng scale mỗi octave (cần s+3 ảnh mờ), σ đầu = 1.6 · <a href="https://www.cs.ubc.ca/~lowe/papers/ijcv04.pdf#page=7" target="_blank" rel="noopener">paper §4, hình 1</a></p>
     </div>
   </details>
@@ -239,15 +236,15 @@
     </summary>
     <div class="step-body">
       <ul class="bullets wide">
-        <li>Tinh chỉnh vị trí tới độ chính xác <span class="term" data-term="subpixel">dưới-pixel</span> bằng khai triển <span class="term" data-term="taylor">Taylor</span> bậc 2 của DoG: giải <b>x̂ = −H⁻¹·∂D</b></li>
+        <li>Toàn bộ bước này xoay quanh <b>một ma trận duy nhất</b>: <span class="term" data-term="hessian">H</span> = Hessian 2×2 của DoG — tính từ 9 pixel kề (cách tính ở mục dưới), dùng <b>hai lần</b>: lọc cạnh và tinh chỉnh vị trí</li>
         <li>Loại điểm tương phản thấp: |D| &lt; 0.03 (thang [0..1]) ⇒ dễ là nhiễu, tìm lại không được</li>
-        <li>Loại điểm trên cạnh: cạnh có nhiều cực trị « giả » kéo dài theo đường thẳng</li>
-        <li>Dùng <span class="term" data-term="hessian">Hessian</span> 2×2 của DoG: nếu <span class="term" data-term="eigenvalue">tỉ số eigenvalue</span> lớn hơn 10 ⇒ nghiêng về cạnh, loại bỏ</li>
+        <li>Lọc cạnh bằng H: nếu <span class="term" data-term="eigenvalue">tr²/det</span> ≥ (r+1)²/r = 12.1 (với r = 10) ⇒ một eigenvalue áp đảo ⇒ cực trị « giả » kéo dài theo cạnh ⇒ loại</li>
+        <li>Tinh chỉnh vị trí tới <span class="term" data-term="subpixel">dưới-pixel</span> bằng khai triển <span class="term" data-term="taylor">Taylor</span> bậc 2: giải <b>x̂ = −H⁻¹·∂D</b> từ chính H đó</li>
       </ul>
       <div class="widget" id="w-localize"></div>
 
       <h4 class="h4">Cách tính H 2×2 — sai phân trung tâm, mượn phép thử của Harris corner detector</h4>
-      <p>H không cần kernel hay cửa sổ lớn: toàn bộ chỉ cần <b>9 giá trị DoG trong lưới 3×3</b> quanh điểm đang xét. Bảng dưới là giá trị thật của ảnh mẫu tại (x, y) = (<span data-real="hess.x" data-fmt="int"></span>, <span data-real="hess.y" data-fmt="int"></span>) — cùng pixel với ví dụ DoG ở Bước 1, ô giữa = D(x, y) = <span data-real="hess.D" data-fmt="f1"></span>:</p>
+      <p>H không cần kernel hay cửa sổ lớn: toàn bộ chỉ cần <b>9 giá trị DoG trong lưới 3×3</b> quanh điểm đang xét — tính <b>một lần</b>, dùng cho <b>cả hai việc</b> vừa nêu: lọc cạnh (tr²/det) và tinh chỉnh dưới-pixel (x̂ = −H⁻¹·∂D trong widget phía trên). Bảng dưới là giá trị thật của ảnh mẫu tại (x, y) = (<span data-real="hess.x" data-fmt="int"></span>, <span data-real="hess.y" data-fmt="int"></span>) — cùng pixel với ví dụ DoG ở Bước 1, ô giữa = D(x, y) = <span data-real="hess.D" data-fmt="f1"></span>:</p>
       <div class="tb-mat" style="display:inline-block;margin:6px 0 4px"><small>3×3 giá trị DoG quanh điểm — nguyên liệu duy nhất của mọi công thức dưới đây</small><div data-real-mat="hess.stencil" data-fmt="f1"></div></div>
       <div class="deriv-box">
         <div class="dv-step"><span class="dv-n">1</span><div><b><span class="term" data-term="central-diff">Sai phân trung tâm</span> cho đạo hàm cấp 2</b> — xấp xỉ đạo hàm bằng hiệu các điểm hai bên:
@@ -266,24 +263,11 @@
         <div class="dv-step"><span class="dv-n">4</span><div><b>Verdict với số thật:</b> tr²/det = <b><span data-real="hess.ratio"></span></b> &lt; 12.1 ⇒ <b>GIỮ</b> — điểm này không nằm trên cạnh. Nếu ratio ≥ 12.1 (hoặc det ≤ 0) thì widget phía trên sẽ tô đỏ nó như một điểm bị loại</div></div>
       </div>
 
-      <div class="two-col" style="margin-top:18px">
-        <figure class="imgcard">
-          <img src="img/04_sift_keypoints.jpg" alt="Keypoints SIFT sau localization">
-          <figcaption>Kết quả cuối: vòng tròn = kích thước σ của keypoint · vạch ngang = hướng θ (gán ở bước 3)</figcaption>
-        </figure>
-        <div class="col-side">
-          <div class="callout blue"><b>Kết quả trên ảnh mẫu: 168 keypoints</b><small>sống sót qua 2 bộ lọc — mỗi điểm mang (x, y, σ) riêng, sẵn sàng vào bước 3</small></div>
-          <div class="tensor-box">
-            <div class="tb-title">📐 Ma trận ở Bước 2 — cho 1 keypoint thật</div>
-            <div class="tb-grid">
-              <div class="tb-item"><b>H ∈ ℝ^(2×2)</b><p>Hessian của D: [[D<sub>xx</sub>, D<sub>xy</sub>], [D<sub>xy</sub>, D<sub>yy</sub>]] — độ cong 2 hướng (lấy từ 9 pixel kề trong widget)</p></div>
-              <div class="tb-item"><b>∂D ∈ ℝ²</b><p>gradient (D<sub>x</sub>, D<sub>y</sub>) — đạo hàm cấp 1 trung tâm</p></div>
-              <div class="tb-item"><b>x̂ = −H⁻¹·∂D ∈ ℝ²</b><p>léch phân số (pixel) tới cực trị thật của paraboloid — cộng vào (x, y) thô</p></div>
-              <div class="tb-item"><b>Edge test</b><p>tr²/det ≥ (r+1)²/r = 12.1 với r = 10 ⇒ cạnh ⇒ loại (tương tự tinh thần Harris ở phần ORB)</p></div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <div class="callout blue"><b>Kết quả trên ảnh mẫu: 168 keypoints</b><small>sống sót qua lọc tương phản + lọc cạnh và tinh chỉnh dưới-pixel — mỗi điểm mang (x, y, σ) riêng, sẵn sàng vào bước 3. Số H, ∂D, x̂ của từng điểm hiển thị trực tiếp trong widget phía trên khi bạn bấm vào một điểm.</small></div>
+      <figure class="imgcard center">
+        <img src="img/04_sift_keypoints.jpg" alt="Keypoints SIFT sau localization">
+        <figcaption>Kết quả cuối: vòng tròn = kích thước σ của keypoint · vạch ngang = hướng θ (gán ở bước 3)</figcaption>
+      </figure>
       <p class="links">📖 <a href="https://www.cs.ubc.ca/~lowe/papers/ijcv04.pdf#page=9" target="_blank" rel="noopener">Paper §4 (r = 10, ngưỡng 0.03)</a> · widget trên tính lại đúng các công thức này trên pyramid thật của ảnh mẫu</p>
     </div>
   </details>
@@ -354,6 +338,10 @@
           <div class="tb-item"><b>So khớp</b><p>cùng điểm này trên ảnh đã xoay cho descriptor v′ ⇒ khoảng cách Euclidean ‖v − v′‖ = <b><span data-real="sift.euclid" data-fmt="f3"></span></b> (nhỏ so với cặp ngẫu nhiên ~0.8–1.4) — đó là « match »</p></div>
         </div>
       </div>
+      <h4 class="h4">Minh hoạ: lấy window 16×16 xoay theo θ của Bước 3, rồi tính HoG</h4>
+      <p class="hint">Đây chính là bước « xoay về θ = 0° » nhắc ở trên — chạy thật trên ảnh mẫu. Bật/tắt <b>« xoay theo θ »</b> để thấy: khi tắt, cùng patch được lấy mẫu theo trục ảnh ⇒ gradient đổi hướng ⇒ HoG và cả vector 128 chiều đổi theo — xem mức độ lệch ngay ở thanh bên dưới.</p>
+      <div class="widget" id="w-descriptor"></div>
+      <p class="footnote">Mỗi texel góp trọng số = độ lớn gradient × Gaussian σ = 8 (nửa chiều rộng window) vào 2 bin hướng kề và 4 ô không gian kề (nội suy <b>trilinear</b> như paper §6.1 — nhờ vậy descriptor « mịn » khi ảnh xoay nhẹ) · xong thì chuẩn hoá ‖v‖ = 1 → kẹp 0.2 → chuẩn hoá lần nữa.</p>
       <p class="links">📖 <a href="https://www.cs.ubc.ca/~lowe/papers/ijcv04.pdf#page=15" target="_blank" rel="noopener">Paper §6.1 (128-D, clamp 0.2)</a></p>
     </div>
   </details>
@@ -460,7 +448,7 @@
       <span class="st-open">mở chi tiết</span>
     </summary>
     <div class="step-body">
-      <p class="hint">Kéo thanh <b>top-N</b> để xem Harris xếp hạng điểm FAST. Sau đó <b>rê chuột lên ảnh trái</b> (hoặc bấm 3 nút mẫu) ở bảng « soi ma trận » để thấy từng thành phần của công thức biến thành số thật.</p>
+      <p class="hint">Kéo thanh <b>top-N</b> để xem Harris xếp hạng điểm FAST. <b>Rê chuột lên ảnh trái</b> (hoặc bấm 3 nút mẫu) ở bảng « soi ma trận » để thấy từng thành phần của công thức biến thành số thật — kể cả cách Ix, Iy, Ix·Iy tính từ pixel nào. Cuối widget: khối <b>🏔 Pyramid</b> cho thấy FAST + Harris chạy riêng trên từng level scale rồi gộp chọn điểm mạnh nhất.</p>
       <div class="widget" id="w-harris"></div>
       <div class="tensor-box">
         <div class="tb-title">📐 Ma trận ở Bước 2 — Harris cho 1 corner thật (x = <span data-real="harris.x" data-fmt="int"></span>, y = <span data-real="harris.y" data-fmt="int"></span>, cửa sổ 7×7)</div>
@@ -472,7 +460,7 @@
           <div class="tb-mat"><small>M (2×2, số thật từ OpenCV-cùng công thức)</small><div data-real-mat="harris.M" data-fmt="int"></div></div>
         </div>
       </div>
-      <p class="footnote">FAST không có thước đo « độ góc » và báo nhiều điểm trên cạnh ⇒ ORB tính Harris response cho <b>mọi</b> FAST keypoint, xếp hạng theo level rồi response, giữ top-N (paper: N = 500) · <a href="https://sites.cc.gatech.edu/classes/AY2024/cs4475_summer/images/ORB_an_efficient_alternative_to_SIFT_or_SURF.pdf" target="_blank" rel="noopener">ORB paper §3.1</a> · <a href="https://doi.org/10.1016/0734-189X(88)90022-1" target="_blank" rel="noopener">Harris &amp; Stephens (1988) — paper gốc</a></p>
+      <p class="footnote">FAST không có thước đo « độ góc » và báo nhiều điểm trên cạnh ⇒ ORB tính Harris response cho <b>mọi</b> FAST keypoint trên <b>từng level pyramid</b> (scale 1/1.2<sup>ℓ</sup>), rồi gộp mọi level và giữ top-N điểm có R cao nhất (paper: N = 500) · <a href="https://sites.cc.gatech.edu/classes/AY2024/cs4475_summer/images/ORB_an_efficient_alternative_to_SIFT_or_SURF.pdf" target="_blank" rel="noopener">ORB paper §3.1</a> · <a href="https://doi.org/10.1016/0734-189X(88)90022-1" target="_blank" rel="noopener">Harris &amp; Stephens (1988) — paper gốc</a></p>
     </div>
   </details>
 
@@ -532,6 +520,11 @@
         <div class="dv-step"><span class="dv-n">5</span><div><b>Greedy chọn 256:</b> test có mean bit ≈ 0.5 (variance cao nhất = 0.25 — phân biệt tốt) và <b>tương quan thấp</b> với các test đã chọn — học từ 300k keypoint (PASCAL 2006), dùng cố định cho mọi ảnh sau này</div></div>
       </div>
       <p class="footnote">Cách tính lại theo <a href="https://gilscvblog.com/2013/10/04/a-tutorial-on-binary-descriptors-part-3-the-orb-descriptor" target="_blank" rel="noopener">Gil's CV Blog — tutorial binary descriptors (phần 3)</a>; số học kiểm chứng bằng brute-force trong <code>scripts/generate_assets.py</code> (hàm <code>verify_205590()</code>). Lưu ý: một số cách đếm khác lấy vùng 27×27 = 729 ô ⇒ ra con số hơi khác — bản chất đều là « chọn 2 ô không chồng từ ~26–27 ô cạnh ».</p>
+
+      <div class="callout orange">
+        <b>256 cặp này không phải chọn khi chạy — toạ độ đã được chọn sẵn và viết cứng vào code.</b>
+        <small>Quy trình gồm 2 pha tách biệt hoàn toàn. <b>Pha huấn luyện (chạy một lần duy nhất):</b> trên 300k keypoint PASCAL 2006, thuật toán greedy duyệt 205.590 test ứng viên, chấm điểm từng test bằng mean/variance rồi lọc bỏ cặp tương quan cao, giữ lại <b>256 cặp tốt nhất</b> — kết quả là một bảng toạ độ cố định 256×4 (x₁, y₁, x₂, y₂) được viết cứng vào source OpenCV (mảng <code>ORB_PATTERN</code> trong orb.cpp). <b>Pha chạy thực tế (mọi ảnh, mọi keypoint):</b> ORB chỉ áp pattern cố định đó — với mỗi keypoint đọc sáng 2 ô của từng cặp để ra 1 bit; cùng một vùng vật thể luôn cho cùng 256 bit. Widget dưới mô phỏng lại đúng pha huấn luyện ở quy mô nhỏ (60 patch × 2.200 test thay vì 300k × 205.590) để thấy greedy chọn từng cặp theo tiêu chí gì.</small>
+      </div>
 
       <div class="widget" id="w-greedy"></div>
       <div class="grid-3 tight">
@@ -735,6 +728,7 @@
 
 <footer id="foot">
   <span><a href="../index.html" style="color:#7EB8F0;text-decoration:none">← Trang dự án Fundamentals Computer Vision</a></span>
+  <span style="display:block;margin-top:6px">Hai trang detector « nguyên thuỷ »: <a href="harris.html" style="color:#7EB8F0;text-decoration:none">Harris Corner Detector →</a> · <a href="canny.html" style="color:#7EB8F0;text-decoration:none">Canny Edge Detector →</a></span>
   <span style="display:block;margin-top:6px">SIFT &amp; ORB — trang giải thích tương tác · chạy trực tiếp qua <code>file://</code> và GitHub Pages, không cần server</span>
 </footer>
 
@@ -751,6 +745,7 @@
 <script src="js/widgets/logdog.js"></script>
 <script src="js/widgets/localize.js"></script>
 <script src="js/widgets/orientation.js"></script>
+<script src="js/widgets/descriptor.js"></script>
 <script src="js/widgets/bins.js"></script>
 <script src="js/widgets/harris.js"></script>
 <script src="js/widgets/greedy.js"></script>

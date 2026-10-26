@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Canny Edge Detector — Computer Vision (trang giải thích tương tác)</title>
+<meta name="description" content="Canny edge detector giải thích tới từng giai đoạn: ba tiêu chí của Canny, đạo hàm của Gaussian, Sobel, non-max suppression 4 sector, ngưỡng kép + hysteresis — widget tính thật trên ảnh mẫu, đối chiếu OpenCV.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<noscript><p style="color:#fff;font-family:Arial;padding:2em">Trang này cần JavaScript để chạy các minh hoạ tương tác (nội dung chữ vẫn đọc được khi cuộn).</p></noscript>
+
+<!-- ================= HERO ================= -->
+<header id="hero">
+  <div class="hero-inner">
+    <p class="kicker light">COMPUTER VISION · PRIMITIVE DETECTORS · 2/2</p>
+    <h1 class="mega"><span class="c-green">CANNY</span> <span class="c-white">EDGE DETECTOR</span></h1>
+    <p class="lead">Không phải « một bộ lọc phát minh ra » — mà là <b>bài toán tối ưu</b>: 3 tiêu chí lượng hoá được, giải ra bộ lọc tốt nhất ≈ đạo hàm của Gaussian. Kết quả: edge detector chuẩn mực từ 1986 tới nay, cạnh mảnh 1px, liền mạch.</p>
+    <div class="chips">
+      <span class="chip g">Canny — IEEE TPAMI 1986</span>
+      <span class="chip b">Trang bạn đồng hành: <a href="harris.html" style="color:#fff">Harris Corner Detector →</a></span>
+    </div>
+    <p class="footnote light">Mọi minh hoạ được tính trực tiếp trong trình duyệt từ thuật toán thật trên ảnh mẫu · <b>di chuột hoặc bấm</b> vào các <span class="term light" data-term="gradient">thuật ngữ có gạch chấm</span> để xem giải thích · pipeline tổng quan rồi bấm mở <b>chi tiết từng bước</b> · <a href="index.html" style="color:#9FB6D0">trang SIFT &amp; ORB →</a></p>
+  </div>
+</header>
+
+<!-- ================= NAV ================= -->
+<nav id="topnav">
+  <div class="nav-inner">
+    <span class="nav-brand">CANNY&nbsp;DETECTOR</span>
+    <a href="#tongquan">Tổng quan</a>
+    <a href="#canny">5 bước</a>
+    <a href="#ungdung">Ứng dụng</a>
+    <a href="#tailieu">Tài liệu</a>
+    <a href="harris.html">Harris ↗</a>
+    <a href="index.html">SIFT &amp; ORB ↗</a>
+  </div>
+</nav>
+
+<main>
+
+<!-- ================= TỔNG QUAN ================= -->
+<section class="sec" id="tongquan">
+  <p class="kicker navy">TỔNG QUAN</p>
+  <h2 class="h1">Máy tính « nhìn » gì trong một bức ảnh? — cạnh nằm ở đâu?</h2>
+  <figure class="imgcard center">
+    <img src="img/01_feature_concept.jpg" alt="Ba vùng ảnh: phẳng, cạnh, góc">
+    <figcaption>Ba vùng lấy từ ảnh mẫu: vùng <b>phẳng</b> — không có cạnh · <b>cạnh</b> — dải chuyển sáng↔tối, đổi theo đúng một hướng · <b>góc</b> — hai cạnh gặp nhau</figcaption>
+  </figure>
+  <div class="grid-3">
+    <div><b class="c-green">Cạnh = biên của vùng sáng/tối</b><p>Nơi <span class="term" data-term="gradient">gradient</span> |∇I| đạt cực đại theo hướng vuông góc với biên — « sống lưng » của dải chuyển tiếp.</p></div>
+    <div><b class="c-green">Cạnh thật ≠ cỏ nhiễu</b><p>Đạo hàm khuếch đại nhiễu: một pixel nhiễu ±20 cho gradient ±40, lớn hơn cạnh yếu thật. Toàn bộ Canny là câu trả lời có hệ thống cho vấn đề này.</p></div>
+    <div><b class="c-green">Đầu ra: đường viền 1px</b><p>Sau NMS + hysteresis, mỗi cạnh là một đường mảnh, liền mạch — nguyên liệu trực tiếp cho Hough lines, segmentation, đo đạc hình học.</p></div>
+  </div>
+  <p style="margin-top:14px">Nguyên liệu của Canny cũng chỉ là <span class="term" data-term="gradient">gradient</span> ∇I = (I<sub>x</sub>, I<sub>y</sub>) — nhưng được xử lý <b>điểm theo điểm</b> (từng pixel: có phải đỉnh gradient không?) rồi mới nối không gian (hysteresis), khác với Harris — gom gradient <b>cả cửa sổ</b> thành ma trận trước (xem <a href="harris.html">trang Harris Corner Detector →</a>).</p>
+  <div class="callout green">
+    <b>Trình tự lịch sử:</b> Canny (1986) trước Harris (1988). Cả hai là thế hệ detector đầu tiên, trước SIFT (1999/2004) và ORB (2011) của <a href="index.html">trang SIFT &amp; ORB</a>. Canny sống tới hôm nay ở mọi pipeline: tiền xử lý contour, Hough, đo đạc công nghiệp, y khoa — cạnh là thứ « nhìn thấy hình dạng » đầu tiên của máy tính.
+  </div>
+</section>
+
+<!-- ================= CANNY ================= -->
+<section class="sec" id="canny">
+  <div class="sec-head dark-band green-band">
+    <div class="sec-head-inner">
+      <div>
+        <p class="kicker">IEEE TPAMI · 1986</p>
+        <h2 class="mega c-green">CANNY</h2>
+        <p class="sub">A Computational Approach to Edge Detection</p>
+        <p class="lead">John F. Canny, MIT AI Lab. Đặt 3 tiêu chí cho bộ phát cạnh — phát hiện tốt, định vị tốt, một cạnh một đáp ứng — giải bài toán tối ưu: nghiệm gần đúng là <b>đạo hàm của Gaussian</b>, và cả đặc tính gói gọn trong một tham số σ = scale.</p>
+        <p class="links light">📄 <a href="https://doi.org/10.1109/TPAMI.1986.4767851" target="_blank" rel="noopener">Paper gốc (Canny, TPAMI 1986)</a> · 🌐 <a href="https://docs.opencv.org/3.4/da/d22/tutorial_py_canny.html" target="_blank" rel="noopener">Tutorial OpenCV Canny</a></p>
+      </div>
+      <div>
+        <div class="card" style="background:#1C4A3E;border-color:#2A6B5A;color:#DCE7F5">
+          <b style="color:#7ED8B8">BA GIAI ĐOẠN SAU LÀM MƯỢT</b>
+          <p style="font-family:Georgia,serif;font-size:16px;color:#fff;margin:6px 0">|∇I| = √(I<sub>x</sub>² + I<sub>y</sub>²), θ = atan2(I<sub>y</sub>, I<sub>x</sub>)</p>
+          <p style="font-family:Georgia,serif;font-size:16px;color:#fff;margin:0 0 6px">NMS → ngưỡng kép → hysteresis</p>
+          <p style="font-size:12px;color:#9FB6D0;margin:0">σ của Gaussian là « núm vặn » duy nhất = scale · cạnh đầu ra mảnh 1px, liền mạch</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="kicker green" style="margin-top:34px">CANNY · PIPELINE TỔNG QUAN</p>
+  <h3 class="h3">5 trạm — mỗi trạm trả lời một câu hỏi</h3>
+  <div class="chain">
+    <div class="card plain"><b>Ảnh xám</b><p>I(x, y)</p></div><span class="arr o">→</span>
+    <div class="card"><b style="color:#0B7A57">① Gaussian σ</b><p>khử nhiễu — và định nghĩa scale</p></div><span class="arr o">→</span>
+    <div class="card"><b style="color:#0B7A57">② Sobel</b><p>|∇I| và θ = atan2(I<sub>y</sub>, I<sub>x</sub>)</p></div><span class="arr o">→</span>
+    <div class="card"><b style="color:#0B7A57">③ NMS</b><p>chỉ giữ đỉnh — mỏng về 1px</p></div><span class="arr o">→</span>
+    <div class="card"><b style="color:#0B7A57">④ Ngưỡng kép</b><p>strong / weak / bỏ</p></div><span class="arr">→</span>
+    <div class="card plain"><b>⑤ Hysteresis</b><p>nối weak vào strong ⇒ cạnh</p></div>
+  </div>
+  <div class="steps-ctl">
+    <span class="hint" style="margin:0">Bấm từng bước để mở chi tiết (có minh hoạ tương tác + số thật):</span>
+    <button class="w-btn" data-toggle-details="#canny-steps" data-mode="open">Mở tất cả</button>
+    <button class="w-btn" data-toggle-details="#canny-steps" data-mode="close">Đóng tất cả</button>
+  </div>
+
+  <div id="canny-steps">
+
+  <!-- ===== CANNY BƯỚC 1 ===== -->
+  <details class="step" id="canny-b1">
+    <summary>
+      <span class="st-badge" style="--c:#0E9F6E">1</span>
+      <span class="st-main"><b>Bài toán của Canny: 3 tiêu chí ⇒ bộ lọc tối ưu ≈ đạo hàm của Gaussian</b><small>Vì sao đạo hàm thô bị nhiễu giết; 3 tiêu chí viết bằng công thức; tradeoff SNR ↔ định vị</small></span>
+      <span class="st-open">mở chi tiết</span>
+    </summary>
+    <div class="step-body">
+      <p>Vấn đề gốc của edge detection: <b>đạo hàm khuếch đại nhiễu</b>. Cạnh thật cho gradient lớn — nhưng một pixel nhiễu ±20 cũng tạo gradient ±40, khổng lồ so với tín hiệu. Kết quả: đạo hàm thô cho ra « cỏ dại » — hàng chục ngàn pixel cạnh giả cho mỗi cạnh thật.</p>
+      <div class="callout green formula">
+        <b>Cách thoát: <span class="term" data-term="lowpass">làm mượt</span> TRƯỚC khi lấy đạo hàm — và câu hỏi khoa học là « mượt bao nhiêu, bằng gì? »</b>
+        <small>Canny (1986) trả lời bằng cách phát biểu bài toán thành tối ưu hoá, không chọn bộ lọc theo cảm tính</small>
+      </div>
+
+      <h4 class="h4">Ba tiêu chí — viết đúng công thức</h4>
+      <p>Mô hình 1 chiều: cạnh = <b>bậc thang biên độ A</b> s(x) = A·1(x &lt; 0) cộng nhiễu trắng Gaussian n(x) với phương sai n₀ mỗi đơn vị chiều dài. Gọi f(x) là bộ lọc lẻ (odd — như mọi đạo hàm) trên [−W, W]. Đáp ứng tại cạnh là (s ∗ f)(0) = A·∫₀<sup>W</sup> f(x)dx; đáp ứng nhiễu có phương sai n₀·∫ f²(x)dx.</p>
+      <div class="deriv-box green">
+        <div class="dv-step"><span class="dv-n">1</span><div><b>Tiêu chí 1 — phát hiện tốt (good detection): tỉ số tín hiệu/nhiễu (<span class="term" data-term="snr">SNR</span>) phải lớn.</b>
+          <span class="dv-math">SNR = A·|∫₀<sup>W</sup> f(x)dx| / √( n₀·∫<sub>−W</sub><sup>W</sup> f²(x)dx )</span>
+          <small>tử số — đáp ứng thật tại vị trí cạnh; mẫu số — nhiễu ở vùng phẳng. Cạnh được « phát hiện tốt » khi cực đại tín hiệu thắng ổn định trước nhiễu ⇒ không bỏ sót cạnh, không báo nhiễu</small></div></div>
+        <div class="dv-step"><span class="dv-n">2</span><div><b>Tiêu chí 2 — định vị tốt (good localization): đỉnh phải đứng đúng chỗ cạnh.</b> Nhiễu làm đỉnh đáp ứng trôi: tuyến tính hoá quanh cực đại, độ lệch chuẩn của vị trí đỉnh δx = (n ∗ f′)(0) / (A·f′(0)) ⇒ chất lượng định vị (nghịch đảo δx):
+          <span class="dv-math">Localization = A·|f′(0)| / √( n₀·∫<sub>−W</sub><sup>W</sup> f′²(x)dx )</span>
+          <small>SNR và Localization <b>xung khắc</b>: làm mượt mạnh ⇒ SNR tăng nhưng cạnh bị « nhòe », đỉnh trôi xa vị trí thật — bài toán tối ưu chính là cân bằng cặp xung khắc này</small></div></div>
+        <div class="dv-step"><span class="dv-n">3</span><div><b>Tiêu chí 3 — mỗi cạnh chỉ một đáp ứng (minimal multiple responses).</b> Đáp ứng của bộ lọc với nhiễu thuần là quá trình Gaussian: khoảng cách trung bình giữa 2 cực đại kề nhau tỉ lệ √( ∫f′²dx / ∫f″²dx ) (công thức Rice). Ràng buộc: khoảng cách này ≥ ~2d (d — độ rộng cho phép) để nhiễu không tạo chuỗi cực đại giả dọc một cạnh thật</div></div>
+        <div class="dv-step"><span class="dv-n">4</span><div><b>Giải bài toán: max SNR + Localization dưới ràng buộc 3</b> — phép tính biến phân cho nghiệm số (dạng « bump kéo dài », phải giải số). Nhưng Canny chỉ ra nghiệm đó <b>rất giống đạo hàm của Gaussian</b>:
+          <span class="dv-math">f(x) = −G′(x),&nbsp;&nbsp; G(x) = (1/√(2πσ²))·e<sup>−x²/2σ²</sup> ⇒ f(x) = (x/σ²)·G(x)</span>
+          <small>đơn giản, separable, và mọi đặc tính của nó gói trong <b>một tham số σ</b> — chính là scale. σ lớn = SNR cao / định vị thô (cạnh mờ, rộng); σ nhỏ = nhạy chi tiết / dễ nhiễu</small></div></div>
+      </div>
+
+      <p class="hint">Widget: một cạnh bậc thang A = 80 + nhiễu trắng, hai bộ lọc thi đấu — <b>sai phân trung tâm thô</b> [−½, 0, ½] và <b>đạo hàm của Gaussian</b> với σ kéo được. Hai cột SNR đo trực tiếp từ dữ liệu: |đáp ứng tại cạnh| ÷ độ lệch chuẩn đáp ứng ở vùng phẳng. Bấm « đổi hạt nhiễu » để thử nhiều hiện thực.</p>
+      <div class="widget" id="w-hc-1d"></div>
+      <p class="footnote">Một điểm sâu hơn: vì tích chập là phép tuyến tính nên <b>đạo hàm và làm mượt đổi chỗ được</b>: ∂(G ∗ I)/∂x = G′ ∗ I — « lấy đạo hàm ảnh đã mượt » ≡ « tích chập ảnh với đạo hàm của Gaussian », một phép chập duy nhất. Đây cũng là nền của scale-space theory (Lindeberg 1994).</p>
+    </div>
+  </details>
+
+  <!-- ===== CANNY BƯỚC 2 ===== -->
+  <details class="step" id="canny-b2">
+    <summary>
+      <span class="st-badge" style="--c:#0E9F6E">2</span>
+      <span class="st-main"><b>Đạo hàm 2 chiều: Gaussian separable, Sobel, độ lớn và hướng gradient</b><small>Mỗi kernel xem đúng từng hệ số: Sobel = mượt ⊗ đạo hàm; L1 vs L2; widget khám phá từng giai đoạn</small></span>
+      <span class="st-open">mở chi tiết</span>
+    </summary>
+    <div class="step-body">
+      <h4 class="h4">Kernel 2D thật ra là 2 kernel 1D — <span class="term" data-term="separable">separability</span></h4>
+      <div class="deriv-box green">
+        <div class="dv-step"><span class="dv-n">1</span><div><b>Đạo hàm của Gaussian 1D:</b>
+          <span class="dv-math">G(x) = (1/√(2πσ²))·e<sup>−x²/2σ²</sup> ⇒ G′(x) = −(x/σ²)·G(x)</span>
+          <small>lẻ theo x (đúng tính chất bộ lọc đạo hàm), tự zero tại 0 — mép âm, mép dương: chuyên « soi » bước nhảy sáng tối</small></div></div>
+        <div class="dv-step"><span class="dv-n">2</span><div><b>Nâng lên 2D bằng tích Descartes — tự động separable:</b>
+          <span class="dv-math">∂G/∂x (x, y) = G′(x)·G(y)</span>
+          <small>chập 1D theo x (kernel G′, k = ⌈3σ⌉·2+1 phần tử) rồi 1D theo y (kernel G): chi phí O(2k) mỗi pixel thay vì O(k²) — σ = 2 ⇒ 12 thay vì 25 phép nhân</small></div></div>
+        <div class="dv-step"><span class="dv-n">3</span><div><b><span class="term" data-term="sobel">Sobel 3×3</span> — chính là « mượt ⊗ đạo hàm » cỡ nhỏ:</b>
+          <span class="dv-math">S<sub>x</sub> = [1, 2, 1]<sup>ᵀ</sup> ⊗ [−1, 0, 1] = [ [−1, 0, 1], [−2, 0, 2], [−1, 0, 1] ]</span>
+          <small>[−1, 0, 1] — sai phân trung tâm (×2); [1, 2, 1] — Gaussian mini làm mượt vuông góc với hướng đạo hàm. Trên ramp tuyến tính I(x) = c·x, Sobel cho 8c ⇒ hiểu đáp ứng Sobel = 8·f′ (cùng bậc, mọi ngưỡng phải hiểu theo thang này)</small></div></div>
+        <div class="dv-step"><span class="dv-n">4</span><div><b>Độ lớn và hướng:</b>
+          <span class="dv-math">|∇I|₂ = √(I<sub>x</sub>² + I<sub>y</sub>²)&nbsp;&nbsp;(L2 — đúng nghĩa Euclid)&nbsp;&nbsp;·&nbsp;&nbsp;|∇I|₁ = |I<sub>x</sub>| + |I<sub>y</sub>|&nbsp;&nbsp;(L1 — nhanh, OpenCV mặc định)</span>
+          <span class="dv-math">θ = atan2(I<sub>y</sub>, I<sub>x</sub>) — hướng đổi sáng mạnh nhất, vuông góc với cạnh</span>
+          <small>L1 ≠ L2 ở hướng chéo: I<sub>x</sub> = I<sub>y</sub> = c ⇒ L1 = 2c nhưng L2 = √2·c ≈ 1.41c — cùng một cạnh chéo « cao hơn » theo L1 ⇒ ngưỡng NMS lệch theo hướng. L2 chuẩn hơn, L1 rẻ hơn (không √)</small></div></div>
+      </div>
+      <p class="hint">Kéo σ và bấm từng giai đoạn để xem ảnh mẫu đi qua từng biến đổi — các canvas đều tính thật trong trình duyệt:</p>
+      <div class="widget" id="w-hc-stages"></div>
+    </div>
+  </details>
+
+  <!-- ===== CANNY BƯỚC 3 ===== -->
+  <details class="step" id="canny-b3">
+    <summary>
+      <span class="st-badge" style="--c:#0E9F6E">3</span>
+      <span class="st-main"><b><span class="term" data-term="nms">Non-Maximum Suppression</span>: cắt « sống lưng » của dải gradient</b><small>Sau Sobel, một cạnh thật là dải rộng 3–5px đặc gradient lớn — NMS giữ duy nhất pixel đỉnh, theo từng hướng</small></span>
+      <span class="st-open">mở chi tiết</span>
+    </summary>
+    <div class="step-body">
+      <p>Sau bước 2, cạnh thật không phải 1px mà là <b>dải 3–5px</b> đặc độ lớn gradient (Gaussian σ = 1.4 làm đám mây gradient rộng ~3–4px mỗi mép). Muốn đường viền mảnh, phải hỏi mỗi pixel: « em có phải <b>đỉnh</b> của dải theo đúng hướng của chính em không? » — so với 2 láng giềng <b>dọc hướng gradient</b> θ:</p>
+      <div class="callout green formula">
+        <b>Giữ pixel nếu |∇I|(x, y) ≥ cả 2 láng giềng theo hướng θ, và &gt; ít nhất một phía (quyết hoà)</b>
+        <small>θ liên tục ⇒ không thể tra láng giềng « theo đúng góc » — <span class="term" data-term="quantize">lượng tử hoá</span> thành 4 sector chuẩn: so theo 0° / 45° / 90° / 135°</small>
+      </div>
+      <p>θ ∈ [0°, 180°) (hướng gradient không phân biệt ±) được cắt thành 4 sector, mỗi sector ứng một cặp láng giềng trong lưới 8-hướng:</p>
+      <div class="tb-table-wrap">
+        <table class="cmp">
+          <tr><th>Khoảng θ</th><th>Hướng gradient</th><th>2 láng giềng so sánh</th></tr>
+          <tr><td>[0°, 22.5°) ∪ [157.5°, 180°)</td><td>→ ngang</td><td>(x−1, y) và (x+1, y)</td></tr>
+          <tr><td>[22.5°, 67.5°)</td><td>↗ 45° nếu I<sub>x</sub>I<sub>y</sub> &gt; 0, ↘ 135° nếu &lt; 0</td><td>(x−1, y−1) &amp; (x+1, y+1) · hoặc (x−1, y+1) &amp; (x+1, y−1)</td></tr>
+          <tr><td>[67.5°, 112.5°)</td><td>↑ dọc</td><td>(x, y−1) và (x, y+1)</td></tr>
+          <tr><td>[112.5°, 157.5°)</td><td>↘ / ↗ (chi tiết hoá bởi dấu I<sub>x</sub>I<sub>y</sub>)</td><td>đối xứng với hàng 45°</td></tr>
+        </table>
+      </div>
+      <p class="hint">Bấm các nút mẫu hoặc rê chuột lên ảnh magnitude: widget bóc lưới 9×9 quanh pixel, vẽ mũi tên hướng gradient, tô sáng 2 láng giềng bị so và phán giữ / loại — kèm trước/sau NMS trên toàn ảnh.</p>
+      <div class="widget" id="w-hc-nms"></div>
+      <div class="callout green"><b>Sau NMS, chỉ còn các sống lưng mảnh 1px.</b> Trên ảnh mẫu với σ = 1.4: <span data-hcr="canny.nKeep" data-fmt="int"></span> pixel giữ lại (sau quyết hoà) từ đám gradient dày. Nhưng chúng vẫn là <b>số thực</b> — chưa phải « cạnh / không cạnh ». Chuyển nhị phân bằng <b>một</b> ngưỡng thì thất bại: ngưỡng cao làm cạnh đứt khúc, ngưỡng thấp ngập nhiễu. Đó là bài của Bước 4.</div>
+    </div>
+  </details>
+
+  <!-- ===== CANNY BƯỚC 4 ===== -->
+  <details class="step" id="canny-b4">
+    <summary>
+      <span class="st-badge" style="--c:#0E9F6E">4</span>
+      <span class="st-main"><b>Ngưỡng kép + hysteresis: yếu được « cứu » chỉ khi nối được vào mạnh</b><small>Tại sao 1 ngưỡng thất bại; luật kết nối; BFS — widget mô phỏng từng nhịp lan truyền</small></span>
+      <span class="st-open">mở chi tiết</span>
+    </summary>
+    <div class="step-body">
+      <div class="grid-3">
+        <div><b class="c-green">Ngưỡng cao t<sub>high</sub> một mình</b><p>Chỉ còn cạnh « chắc chắn » — nhưng cạnh yếu hơn một chút (bóng đổ dạt, tương phản thấp) bị <b>đứt khúc</b>. Cạnh đứt là tai hoạ cho bước nối hình học phía sau.</p></div>
+        <div><b class="c-green">Ngưỡng thấp t<sub>low</sub> một mình</b><p>Cạnh liền mạch — kèm theo hàng nghìn đốm nhiễu. Như mở khoá « mười ngón tay »: ai cũng vào được.</p></div>
+        <div><b class="c-green">Hai ngưỡng + hysteresis ✓</b><p>Strong (≥ t<sub>high</sub>): là cạnh. Weak (t<sub>low</sub> ≤ m &lt; t<sub>high</sub>): chỉ là cạnh nếu <b>nối được về một strong qua chuỗi weak</b> — nhiễu lẻ loi bị bỏ, cạnh thật yếu được nối liền.</p></div>
+      </div>
+      <div class="callout green formula">
+        <b>Luật <span class="term" data-term="hysteresis">hysteresis</span>: Edge = { m ≥ t<sub>high</sub> } ∪ { weak có đường đi tới strong, qua các pixel weak, kết nối 8-láng giềng }</b>
+        <small>toán học: bao đóng bắc cầu (transitive closure) của quan hệ « kề nhau » xuất phát từ tập strong — tính bằng BFS/DFS, kết quả không phụ thuộc thứ tự duyệt</small>
+      </div>
+      <p class="hint">Kéo 2 ngưỡng — bản đồ phân loại (trắng = strong, cam = weak, đen = bỏ) và kết quả hysteresis cập nhật tức thì. Bấm ▶ để xem BFS « bò » từng nhịp từ các hạt strong qua đại dương weak:</p>
+      <div class="widget" id="w-hc-hyst"></div>
+      <p class="footnote">OpenCV: <code>cv2.Canny(img, threshold1, threshold2, apertureSize=3, L2gradient=False)</code> — khuyến nghị t<sub>low</sub> ≈ t<sub>high</sub>/2 … t<sub>high</sub>/3 · paper Canny 1986, phần VI (hysteresis) — <a href="https://doi.org/10.1109/TPAMI.1986.4767851" target="_blank" rel="noopener">doi</a>.</p>
+    </div>
+  </details>
+
+  <!-- ===== CANNY BƯỚC 5 ===== -->
+  <details class="step" id="canny-b5">
+    <summary>
+      <span class="st-badge" style="--c:#0E9F6E">5</span>
+      <span class="st-main"><b>Pipeline đầy đủ + đối chiếu OpenCV</b><small>Cùng σ, cùng ngưỡng: pipeline của trang vs cv2.Canny — thấy chính xác chỗ nào lệch</small></span>
+      <span class="st-open">mở chi tiết</span>
+    </summary>
+    <div class="step-body">
+      <p class="hint">Bật/tắt từng giai đoạn, kéo σ và 2 ngưỡng — toàn bộ pipeline Canny chạy thật trong trình duyệt:</p>
+      <div class="widget" id="w-hc-canny"></div>
+      <h4 class="h4">Đối chiếu số</h4>
+      <div class="stat-row">
+        <div><b class="big c-green"><span data-hcr="canny.nEdge" data-fmt="int"></span></b><small>điểm cạnh — pipeline của trang (σ = 1.4, t<sub>high</sub> = 110, t<sub>low</sub> = 55, L2)</small></div>
+        <div><b class="big c-green"><span data-hcr="canny.cvEdge" data-fmt="int"></span></b><small>điểm cạnh — cv2.Canny cùng σ, cùng ngưỡng (L2gradient=True)</small></div>
+        <div><b class="big c-green"><span data-hcr="canny.nStrong" data-fmt="int"></span> + <span data-hcr="canny.nWeak" data-fmt="int"></span></b><small>strong + weak trước hysteresis — hysteresis cứu được một phần weak, bỏ phần cô lập</small></div>
+      </div>
+      <div class="callout green">
+        <b>Vì sao chênh nhau ~35%?</b> Cùng 5 giai đoạn và cùng tham số, nhưng chi tiết « cuống » khác: OpenCV định lượng sector bằng tan(22.5°) trên tỉ số I<sub>y</sub>/I<sub>x</sub> thay vì atan2, xử lý hoà (tie) bất đối xứng, và làm tròn float→uint8 trước khi so ngưỡng. Cạnh mảnh 1px rất nhạy với cách quyết hoà — chênh vài phần trăm đến vài chục phần trăm số điểm là bình thường. Cấu trúc cạnh (vị trí, hình dạng) trùng nhau phần lớn.
+        <small>Benchmark: pipeline của trang tính trong ~40 ms trên 640×360 (JavaScript, 1 luồng); OpenCV C (SIMD) làm điều tương tự nhanh hơn nhiều lần — nhưng cấu trúc thuật toán y hệt.</small>
+      </div>
+      <h4 class="h4">Chọn tham số — bảng tra nhanh</h4>
+      <div class="tb-table-wrap">
+        <table class="cmp">
+          <tr><th>Tham số</th><th>Ý nghĩa toán học</th><th>Gợi ý</th></tr>
+          <tr><td>σ (Gaussian)</td><td>scale — đường kính vùng trung bình hoá ≈ 6σ px; SNR tăng, định vị kém khi σ tăng</td><td>1–2 cho chi tiết mảnh; 3–5 khi nhiễu nặng / cần cạnh « khái quát »</td></tr>
+          <tr><td>t<sub>high</sub></td><td>ngưỡng « chắc chắn là cạnh » trên |∇I| (thang 0–255 với Sobel 3×3 sau blur)</td><td>100–150 cho ảnh thường; đo p95–p99 của |∇I| sau NMS để tự động</td></tr>
+          <tr><td>t<sub>low</sub></td><td>ngưỡng « đủ điều được nối »</td><td>t<sub>high</sub>/2 … t<sub>high</sub>/3 (khuyến nghị của OpenCV)</td></tr>
+          <tr><td>apertureSize</td><td>cỡ kernel Sobel (3, 5, 7)</td><td>3 mặc định; lớn hơn = mượt hơn + gradient « gọn » hơn</td></tr>
+          <tr><td>L2gradient</td><td>|∇I|₂ chuẩn vs |∇I|₁ nhanh</td><td>True nếu cần độ chính xác hướng; False mặc định cho tốc độ</td></tr>
+        </table>
+      </div>
+      <p class="footnote">Giới hạn đáng nhớ: Canny không bất biến scale (σ cố định = một scale duy nhất — cùng bệnh với Harris, cùng thuốc với SIFT: scale-space); tại giao điểm nhiều cạnh (junction) NMS 4-sector làm gãy; texture dày cho ra « cỏ cạnh » — cần khử trước.</p>
+    </div>
+  </details>
+
+  </div><!-- /canny-steps -->
+</section>
+
+<!-- ================= ỨNG DỤNG ================= -->
+<section class="sec alt" id="ungdung">
+  <p class="kicker navy">ỨNG DỤNG</p>
+  <h2 class="h1">Cạnh Canny chạy đâu trong đời thực?</h2>
+  <div class="apps">
+    <div class="app"><span class="appicon" style="--c:#0E9F6E">HOUGH</span><div><b>Hough lines / circles</b><p>Cạnh mảnh 1px là đầu vào chuẩn của phép biến đổi Hough: tìm đường thẳng, đường tròn trong đám điểm biên — đo đạc, kiểm tra linh kiện.</p></div></div>
+    <div class="app"><span class="appicon" style="--c:#2E86DE">SEG</span><div><b>Segmentation &amp; contour</b><p>Cạnh + connected components = tách vật thể khỏi nền; tiền đề của mọi pipeline tách vùng cổ điển.</p></div></div>
+    <div class="app"><span class="appicon" style="--c:#E67E22">QC</span><div><b>Kiểm tra công nghiệp (AOI)</b><p>Đo kích thước biên chi tiết, phát hiện khuyết trên dây chuyền — cạnh chuẩn hoá được, đo được dưới pixel.</p></div></div>
+    <div class="app"><span class="appicon" style="--c:#0E9F6E">DOC</span><div><b>Văn bản &amp; giấy tờ</b><p>Tìm biên tài liệu, góc tờ giấy để « phẳng hoá » ảnh chụp (document scanner trên điện thoại).</p></div></div>
+    <div class="app"><span class="appicon" style="--c:#2E86DE">MED</span><div><b>Ảnh y khoa</b><p>Viền cơ quan, mạch máu trên CT / MRI — σ lớn để cạnh « khái quát », bỏ texture mô.</p></div></div>
+    <div class="app"><span class="appicon" style="--c:#E67E22">MOV</span><div><b>Motion / optical flow</b><p>Cạnh là đặc trưng thưa để khớp frame kề nhau trong video — nhẹ hơn so toàn ảnh.</p></div></div>
+  </div>
+  <div class="callout green" style="margin-top:20px">
+    <b>Còn góc (corner)?</b> Cạnh cho biết biên ở đâu; góc cho biết « neo » ở đâu để tracking / matching. Hai detector là cặp bài trùng — sang <a href="harris.html">trang Harris Corner Detector →</a> để xem cách gom gradient cả cửa sổ thành một ma trận 2×2.
+  </div>
+</section>
+
+<!-- ================= TÀI LIỆU ================= -->
+<section class="sec dark" id="tailieu">
+  <p class="kicker">TÀI LIỆU · PAPER GỐC</p>
+  <h2 class="h1 c-white">Đọc sâu hơn — mọi công thức trên trang đều tra được tới nguồn</h2>
+  <div class="refs">
+    <div class="ref-col">
+      <h3>Papers gốc</h3>
+      <ul>
+        <li><a href="https://doi.org/10.1109/TPAMI.1986.4767851" target="_blank" rel="noopener">Canny (1986) — A Computational Approach to Edge Detection, IEEE TPAMI</a> <span class="mut">· 3 tiêu chí, bộ lọc tối ưu, hysteresis — toàn bộ Bước 1 và 4 ở đây</span></li>
+        <li><a href="https://doi.org/10.1098/rspa.1980.0020" target="_blank" rel="noopener">Marr &amp; Hildreth (1980) — Theory of Edge Detection, Proc. R. Soc. B</a> <span class="mut">· thế hệ trước Canny: LoG + zero-crossing</span></li>
+        <li><a href="https://doi.org/10.1016/0734-189X(88)90022-1" target="_blank" rel="noopener">Harris &amp; Stephens (1988) — A Combined Corner and Edge Detector (Alvey)</a> <span class="mut">· trang bạn đồng hành: <a href="harris.html" style="color:#7EB8F0">Harris →</a></span></li>
+        <li><a href="https://link.springer.com/article/10.1007/BFb0056195" target="_blank" rel="noopener">Lindeberg (1994) — Scale-Space Theory in Computer Vision</a> <span class="mut">· lý thuyết nền: đạo hàm Gaussian hoá, σ = scale</span></li>
+      </ul>
+    </div>
+    <div class="ref-col">
+      <h3>Tutorial &amp; sách</h3>
+      <ul>
+        <li><a href="https://docs.opencv.org/3.4/da/d22/tutorial_py_canny.html" target="_blank" rel="noopener">OpenCV — Canny edge detector</a> · <a href="https://docs.opencv.org/3.4/d2/d00/tutorial_py_sobel_derivatives.html" target="_blank" rel="noopener">Sobel derivatives</a> · <a href="https://docs.opencv.org/3.4/db/d88/tutorial_py_thresholding.html" target="_blank" rel="noopener">Thresholding</a></li>
+        <li><a href="https://szeliski.org/Book/" target="_blank" rel="noopener">Szeliski — Computer Vision: Algorithms and Applications</a> <span class="mut">· §4.3 edge detection (Canny, Laplacian)</span></li>
+        <li><a href="https://en.wikipedia.org/wiki/Canny_edge_detector" target="_blank" rel="noopener">Wikipedia — Canny edge detector</a> · <a href="https://en.wikipedia.org/wiki/Non-maximum_suppression" target="_blank" rel="noopener">Non-maximum suppression</a> · <a href="https://en.wikipedia.org/wiki/Hysteresis" target="_blank" rel="noopener">Hysteresis</a></li>
+      </ul>
+      <h3>Về trang này</h3>
+      <ul>
+        <li>Toàn bộ widget tính lại đúng thuật toán bằng JavaScript ngay trong trình duyệt trên ảnh mẫu (640×360, nhúng base64) — không có ảnh vẽ tay.</li>
+        <li>Số đối chiếu OpenCV sinh bởi <code>scripts/generate_hc_assets.py</code> (OpenCV 5.0) → <code>js/hc_data.js</code>; pipeline Python chép y hệt pipeline JS để bảo chứng từng số.</li>
+        <li>Trang bạn đồng hành: <a href="harris.html">Harris Corner Detector</a> · <a href="index.html">SIFT &amp; ORB</a>.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="closing">Canny 1986: biến « tìm cạnh » thành một bài toán tối ưu có lời giải — và 40 năm sau vẫn là chuẩn mực.</p>
+</section>
+
+</main>
+
+<footer id="foot">
+  <span>
+    <a href="../index.html" style="color:#7EB8F0;text-decoration:none">← Trang dự án Fundamentals Computer Vision</a>
+    &nbsp;·&nbsp;
+    <a href="harris.html" style="color:#7EB8F0;text-decoration:none">Trang Harris Corner Detector →</a>
+    &nbsp;·&nbsp;
+    <a href="index.html" style="color:#7EB8F0;text-decoration:none">Trang SIFT &amp; ORB →</a>
+  </span>
+  <span style="display:block;margin-top:6px">Canny edge detector — trang giải thích tương tác · chạy trực tiếp qua <code>file://</code> và GitHub Pages, không cần server</span>
+</footer>
+
+<button id="backtop" aria-label="Về đầu trang">↑</button>
+<div id="tooltip" role="tooltip" hidden></div>
+
+<script src="js/sample_data.js"></script>
+<script src="js/hc_data.js"></script>
+<script src="js/imgproc.js"></script>
+<script src="js/core.js"></script>
+<script src="js/hc_common.js"></script>
+<script src="js/hc_canny.js"></script>
+</body>
+</html>

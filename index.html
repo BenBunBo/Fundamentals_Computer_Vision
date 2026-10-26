@@ -13,7 +13,7 @@
   .lead { font-size: 18px; max-width: 720px; margin: 0 auto 24px; }
   .chips { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
   .chip { border-radius: 9px; border: 1.5px solid; padding: 9px 16px; font-size: 14px; font-weight: bold; color: #fff; text-decoration: none; background: rgba(11,18,32,.55); }
-  .chip.b { border-color: #2E86DE; } .chip.o { border-color: #E67E22; }
+  .chip.b { border-color: #2E86DE; } .chip.o { border-color: #E67E22; } .chip.g { border-color: #0E9F6E; }
   .chip:hover { background: rgba(46,134,222,.35); }
   main { max-width: 980px; margin: 0 auto; padding: 46px 24px 30px; }
   .feature { display: flex; gap: 30px; align-items: center; background: #F4F7FA; border: 1.5px solid #E3EAF2; border-radius: 16px; padding: 24px; flex-wrap: wrap; }
@@ -50,6 +50,10 @@
     <a class="chip b" href="sift-orb-html/index.html">🌐 Mở trang SIFT &amp; ORB tương tác</a>
     <a class="chip o" href="SIFT_ORB_Computer_Vision.pptx">📊 Tải bộ slide PowerPoint</a>
   </div>
+  <div class="chips" style="margin-top:12px">
+    <a class="chip b" href="sift-orb-html/harris.html">🔎 Harris Corner Detector — trang tương tác</a>
+    <a class="chip g" href="sift-orb-html/canny.html">🌿 Canny Edge Detector — trang tương tác</a>
+  </div>
 </header>
 
 <main>
@@ -66,6 +70,8 @@
   <h3>Cấu trúc repository</h3>
   <div class="grid">
     <div class="card"><b>🌐 sift-orb-html/</b><p>Trang web tương tác: <code>index.html</code> + <code>style.css</code> + 11 widget JavaScript — chạy được qua <code>file://</code> và GitHub Pages.</p><a href="sift-orb-html/index.html">Mở →</a></div>
+    <div class="card"><b>🔎 sift-orb-html/harris.html</b><p>Trang Harris Corner Detector: E(u,v), structure tensor M, eigenvalue, R = det − κ·trace², NMS — 4 widget tính thật trên ảnh mẫu + đối chiếu OpenCV.</p><a href="sift-orb-html/harris.html">Mở →</a></div>
+    <div class="card"><b>🌿 sift-orb-html/canny.html</b><p>Trang Canny Edge Detector: 3 tiêu chí của Canny, đạo hàm Gaussian, Sobel, NMS 4-sector, ngưỡng kép + hysteresis — 5 widget tính thật + đối chiếu OpenCV.</p><a href="sift-orb-html/canny.html">Mở →</a></div>
     <div class="card"><b>📊 SIFT_ORB_Computer_Vision.pptx</b><p>Bộ slide 23 trang (13 MB) dựng bằng pptxgenjs — bản « trình bày » rút gọn của trang web.</p><a href="SIFT_ORB_Computer_Vision.pptx">Tải xuống →</a></div>
     <div class="card"><b>🐍 scripts/</b><p><code>generate_assets.py</code> — OpenCV 5 chạy thật trên ảnh mẫu để sinh mọi hình minh hoạ + số liệu (<code>real_data.js</code>); <code>build_deck.js</code> — dựng pptx.</p></div>
     <div class="card"><b>🖼 assets/</b><p>15+ hình PNG sinh tự động (pipeline, DoG, pyramid, matching, benchmark…).</p></div>

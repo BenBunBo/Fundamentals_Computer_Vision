@@ -44,7 +44,7 @@
           <div class="card" style="padding:10px 12px">
             <b style="font-size:13px">Công thức (Harris &amp; Stephens 1988)</b>
             <p style="font-family:monospace;font-size:11.5px;line-height:1.7">M = Σ<sub>w</sub> [ Ix²  IxIy ]<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[ IxIy Iy² ]<br>det = λ₁λ₂, trace = λ₁+λ₂<br><b>R = det − 0.04·trace²</b></p>
-            <p style="font-size:11.5px">OpenCV (orb.cpp) tính R trong cửa sổ <b>7×7</b> quanh từng FAST keypoint, κ = 0.04 — rồi sort theo level, giữ top-N (paper: N = 500).</p>
+            <p style="font-size:11.5px">OpenCV (orb.cpp) tính R trong cửa sổ <b>7×7</b> quanh từng FAST keypoint, κ = 0.04 — rồi gộp mọi level pyramid và giữ top-N điểm có R cao nhất (paper: N = 500).</p>
           </div>
           <svg class="ha-svg" width="250" height="120" viewBox="0 0 250 120" role="img" aria-label="Không gian eigenvalue: phẳng, cạnh, góc">
             <rect x="34" y="6" width="205" height="90" fill="#F4F7FA" stroke="#D8E3F0"/>
@@ -94,6 +94,7 @@
               <table class="mat" id="ht-M"></table>
             </div>
             <div class="ht-nums" id="ht-nums"></div>
+            <div class="ht-eq" id="ht-eq"></div>
           </div>
           <div class="ha-tcell">
             <small>Ellipse λ₁, λ₂ (trục chính của M)</small>
@@ -102,6 +103,16 @@
           </div>
         </div>
         <p class="w-info" style="margin-top:8px">Ix, Iy là <b>gradient trung tâm</b> (hiệu pixel kề bên) — đúng hàm <code>gradAt</code> dùng chung cho mọi widget. M là tổng của 49 ô: <code>M = [[ΣIx², ΣIxIy], [ΣIxIy, ΣIy²]]</code>. Hai eigenvalue của M nói lên ảnh cong đều mọi hướng (góc) hay chỉ một hướng (cạnh).</p>
+      </div>
+
+      <div class="ha-pyr">
+        <div class="ha-pyr-head"><b>🏔 Pyramid: bổ sung scale — FAST + Harris chạy riêng trên từng level, rồi gộp chọn điểm mạnh nhất</b></div>
+        <div class="w-controls" style="margin-top:8px">
+          <label>Gộp mọi level, giữ top-N: <input type="range" id="hp-n" min="100" max="800" step="50" value="500"><b id="hp-nv" style="color:#0F2B46">500</b></label>
+        </div>
+        <canvas id="hp-canvas" width="880" height="160"></canvas>
+        <canvas id="hp-bar" width="880" height="46" style="margin-top:8px"></canvas>
+        <p class="w-info" id="hp-note" style="margin-top:8px"></p>
       </div>`;
 
     const cFast = mount.querySelector("#ha-fast").getContext("2d");
@@ -132,7 +143,96 @@
       buildBase();
       render();
       inspect(presets.corner.x, presets.corner.y, "góc");
+      buildLevels();
+      hpRender();
     });
+
+    // ---------- pyramid: FAST + Harris trên từng level (1/1.2)^ℓ rồi gộp ----------
+    const LC = ["#2E86DE", "#0E9F6E", "#E67E22", "#E02424"];
+    let levels = null;
+
+    function buildLevels() {
+      levels = [];
+      for (let l = 0; l < 4; l++) {
+        const sc = 1 / Math.pow(1.2, l);
+        const nw = Math.round(img.w * sc), nh = Math.round(img.h * sc);
+        let gray = img.gray;
+        if (l > 0) { // resize bilinear — đúng cách ORB dựng pyramid (khác decimation ×2 của SIFT)
+          const c1 = document.createElement("canvas");
+          IMG.putGray(c1, img.gray, img.w, img.h);
+          const c2 = document.createElement("canvas"); c2.width = nw; c2.height = nh;
+          const cx2 = c2.getContext("2d", { willReadFrequently: true });
+          cx2.imageSmoothingEnabled = true;
+          cx2.drawImage(c1, 0, 0, nw, nh);
+          const d = cx2.getImageData(0, 0, nw, nh).data;
+          gray = new Float32Array(nw * nh);
+          for (let i = 0; i < nw * nh; i++) gray[i] = 0.299 * d[4 * i] + 0.587 * d[4 * i + 1] + 0.114 * d[4 * i + 2];
+        }
+        let t = 10, fpts = IMG.fastDetect(gray, nw, nh, t);
+        while (fpts.length > 1500 && t < 40) { t += 5; fpts = IMG.fastDetect(gray, nw, nh, t); }
+        for (const q of fpts) q.r = IMG.harrisAt(gray, nw, nh, q.x, q.y, 7, 0.04);
+        const kept = fpts.filter(q => q.r > 0).sort((a, b) => b.r - a.r);
+        levels.push({ l, scale: sc, w: nw, h: nh, gray, nFast: fpts.length, kept });
+      }
+    }
+
+    function hpRender() {
+      if (!levels) return;
+      const N = +mount.querySelector("#hp-n").value;
+      mount.querySelector("#hp-nv").textContent = N;
+      // gộp mọi level, giữ top-N theo Harris response
+      const pool = [];
+      levels.forEach(L => L.kept.forEach(q => pool.push({ x: q.x, y: q.y, r: q.r, l: L.l })));
+      pool.sort((a, b) => b.r - a.r);
+      const top = pool.slice(0, N);
+      const perLevel = levels.map(L => top.filter(q => q.l === L.l).length);
+      // vẽ 4 level cạnh nhau — bề rộng tỉ lệ theo scale (pyramid thật), chấm = điểm mạnh nhất của level
+      const cv = mount.querySelector("#hp-canvas").getContext("2d");
+      const CH = 170, avail = 872, gap = 8, sumS = levels.reduce((a, L) => a + L.scale, 0);
+      cv.fillStyle = "#fff"; cv.fillRect(0, 0, 880, CH);
+      let xoff = 0;
+      levels.forEach(L => {
+        const dw = Math.floor(avail * L.scale / sumS) - gap;
+        const dh = Math.round(dw * L.h / L.w);
+        const y0 = Math.round((CH - dh) / 2);
+        const tmp = document.createElement("canvas");
+        IMG.putGray(tmp, L.gray, L.w, L.h);
+        cv.imageSmoothingEnabled = true;
+        cv.drawImage(tmp, xoff, y0, dw, dh);
+        L.kept.slice(0, 200).forEach(q => {
+          cv.fillStyle = LC[L.l];
+          cv.beginPath(); cv.arc(xoff + q.x * dw / L.w, y0 + q.y * dh / L.h, Math.max(1.2, dw / 130), 0, Math.PI * 2); cv.fill();
+        });
+        cv.fillStyle = "#0F2B46"; cv.font = "bold 11px Arial"; cv.textAlign = "left";
+        cv.fillText("level " + L.l + " · 1:" + (1 / L.scale).toFixed(2), xoff + 4, 13);
+        cv.fillStyle = "#64748B"; cv.font = "10px Arial";
+        cv.fillText(L.nFast + " FAST → " + L.kept.length + " Harris", xoff + 4, 25);
+        xoff += dw + gap;
+      });
+      // thanh phân bố top-N theo level
+      const bv = mount.querySelector("#hp-bar").getContext("2d");
+      bv.clearRect(0, 0, 880, 46);
+      const total = Math.max(1, top.length);
+      let bx = 0;
+      levels.forEach((L, i) => {
+        const wpx = perLevel[i] / total * 876;
+        bv.fillStyle = LC[i];
+        bv.fillRect(bx, 6, Math.max(0, wpx - 2), 20);
+        if (wpx > 34) {
+          bv.fillStyle = "#fff"; bv.font = "bold 11px Arial"; bv.textAlign = "center";
+          bv.fillText(perLevel[i], bx + wpx / 2, 20);
+        }
+        bx += wpx;
+      });
+      bv.fillStyle = "#64748B"; bv.font = "10.5px Arial"; bv.textAlign = "left";
+      bv.fillText("thành phần top-" + top.length + " theo level — scale của keypoint = 1.2^level", 4, 42);
+      mount.querySelector("#hp-note").innerHTML =
+        "Mỗi level = ảnh resize nội suy bilinear về (1/1.2)<sup>ℓ</sup> — khác SIFT (decimation ×2) · FAST và Harris chạy <b>riêng</b> trên từng level · gộp cả 4 level rồi giữ <b>" + top.length +
+        "</b> điểm có R cao nhất (không phân biệt level). Phân bố: " +
+        levels.map((L, i) => "<span class='lsw' style='background:" + LC[i] + "'></span>level " + i + ": <b>" + perLevel[i] + "</b>").join(" ") +
+        " — mỗi level bắt loại đặc trưng riêng của nó (level 0: chi tiết nhỏ, level thô: cấu trúc lớn); scale của keypoint = 1.2<sup>level</sup> cho biết nó được nhìn ở mức phóng đại nào.";
+    }
+    mount.querySelector("#hp-n").oninput = hpRender;
 
     function buildBase() {
       baseFast = document.createElement("canvas");
@@ -205,6 +305,26 @@
         zCtx.beginPath(); zCtx.moveTo(off + i * cw, off); zCtx.lineTo(off + i * cw, off + 7 * cw); zCtx.stroke();
         zCtx.beginPath(); zCtx.moveTo(off, off + i * cw); zCtx.lineTo(off + 7 * cw, off + i * cw); zCtx.stroke();
       }
+      // số I thật trên từng cell + tô viền 3 cặp cell liên quan Ix / Iy
+      zCtx.font = "10px 'DejaVu Sans Mono', Consolas, monospace"; zCtx.textAlign = "center";
+      for (let j = 0; j < 7; j++) for (let i = 0; i < 7; i++) {
+        const v = img.gray[Math.max(0, Math.min(img.h - 1, y + j - 3)) * img.w + Math.max(0, Math.min(img.w - 1, x + i - 3))];
+        zCtx.fillStyle = v < 110 ? "rgba(255,255,255,.92)" : "rgba(15,43,70,.9)";
+        zCtx.fillText(Math.round(v), off + i * cw + cw / 2, off + j * cw + cw / 2 + 3);
+      }
+      zCtx.lineWidth = 2;
+      const mark = (i, j, col) => { zCtx.strokeStyle = col; zCtx.strokeRect(off + i * cw + 1, off + j * cw + 1, cw - 2, cw - 2); };
+      mark(4, 3, "#2E86DE"); mark(2, 3, "#2E86DE");   // cặp pixel của Ix
+      mark(3, 4, "#0E9F6E"); mark(3, 2, "#0E9F6E");   // cặp pixel của Iy
+      mark(3, 3, "#E02424");                           // tâm
+      // phương trình Ix, Iy, Ix·Iy với số thật (gradient trung tâm = gradAt) — 1 chữ số lẻ vì luma là số thực
+      const g0 = IMG.gradAt(img.gray, img.w, img.h, x, y);
+      const vr = (dx, dy) => img.gray[Math.max(0, Math.min(img.h - 1, y + dy)) * img.w + Math.max(0, Math.min(img.w - 1, x + dx))].toFixed(1);
+      mount.querySelector("#ht-eq").innerHTML =
+        "<b>Ix</b> = I(x+1, y) − I(x−1, y) = <b>" + vr(1, 0) + "</b> − <b>" + vr(-1, 0) + "</b> = <b>" + g0.gx.toFixed(1) + "</b>" +
+        " &nbsp;·&nbsp; <b>Iy</b> = I(x, y+1) − I(x, y−1) = <b>" + vr(0, 1) + "</b> − <b>" + vr(0, -1) + "</b> = <b>" + g0.gy.toFixed(1) + "</b><br>" +
+        "<b>Ix·Iy</b> = " + g0.gx.toFixed(1) + " × " + g0.gy.toFixed(1) + " = <b>" + (g0.gx * g0.gy).toFixed(1) + "</b>" +
+        "<br><small>số trên ảnh là giá trị làm tròn — Ix, Iy tính từ luma gốc (số thực) · viền xanh dương = cặp pixel của Ix · xanh lá = cặp của Iy · lặp lại cho cả 49 cell rồi cộng: ΣIx², ΣIxIy, ΣIy² ⇒ M bên phải</small>";
 
       // heatmaps 7×7 của Ix, Iy, Ix·Iy
       const draw7 = (cv, getv) => {

@@ -5,17 +5,17 @@
 const IMG = (() => {
   function gaussKernel(sigma) {
     const r = Math.max(1, Math.ceil(3 * sigma));
-    const k = new Float32Array(2 * r + 1);
+    const k = new Float64Array(2 * r + 1);
     let s = 0;
     for (let i = -r; i <= r; i++) { const v = Math.exp(-(i * i) / (2 * sigma * sigma)); k[i + r] = v; s += v; }
     for (let i = 0; i < k.length; i++) k[i] /= s;
     return { k, r };
   }
 
-  // Blur separable — O(n · 2r)
+  // Blur separable — O(n · 2r) — số trung gian float64 để khớp pipeline Python/OpenCV
   function gaussBlur(src, w, h, sigma) {
     const { k, r } = gaussKernel(sigma);
-    const tmp = new Float32Array(w * h), out = new Float32Array(w * h);
+    const tmp = new Float64Array(w * h), out = new Float64Array(w * h);
     for (let y = 0; y < h; y++) {
       const row = y * w;
       for (let x = 0; x < w; x++) {

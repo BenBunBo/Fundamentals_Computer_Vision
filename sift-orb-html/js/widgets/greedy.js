@@ -34,15 +34,24 @@
           </div>
           <div class="gr-stats" id="gr-stats"></div>
           <div class="card" style="margin-top:10px;padding:10px 12px">
-            <b style="font-size:13px">Thuật toán trong paper (§4.3)</b>
+            <b style="font-size:13px">Mean &amp; variance của 1 test — từ đâu ra?</b>
             <p style="font-size:12px;line-height:1.6">
-              1. Chạy mọi test trên tất cả patch huấn luyện<br>
-              2. Sắp test theo |mean − 0.5| tăng dần (mean 0.5 ⇒ variance 0.25 — cao nhất có thể)<br>
-              3. Greedy: lấy test đầu vào R → xét test kế tiếp: |tương quan| với test nào trong R quá ngưỡng ⇒ bỏ, ngược lại ⇒ thêm vào R<br>
-              4. Lặp đến khi đủ 256; nếu cạn pool ⇒ nới ngưỡng và thử lại
+              1 test τ = 1 phép so sáng tối giữa 2 ô 5×5. Chạy τ qua <b>N patch huấn luyện</b> ⇒ N bit b₁ … b_N ∈ {0, 1}:<br>
+              • <b>mean μ(τ) = (b₁ + … + b_N) / N</b> — đơn giản là <i>tỉ lệ patch cho bit 1</i><br>
+              • bit là biến Bernoulli ⇒ <b>variance = μ·(1 − μ)</b> — đạt max <b>0.25 khi μ = 0.5</b><br>
+              μ = 0.5 ⇒ test chia đôi tập patch ⇒ « biết nhiều » nhất; μ ≈ 0 hoặc 1 ⇒ luôn cùng kết quả ⇒ vô dụng. Vì vậy greedy <b>sort theo |μ − 0.5| tăng dần</b> (tương đương variance giảm dần) rồi mới lọc tương quan.
             </p>
           </div>
+          <p class="links" style="margin-top:8px">📖 Thuật toán greedy đầy đủ: <a href="https://sites.cc.gatech.edu/classes/AY2024/cs4475_summer/images/ORB_an_efficient_alternative_to_SIFT_or_SURF.pdf" target="_blank" rel="noopener">ORB paper §4.3</a> · cách tính lại con số 205.590: <a href="https://gilscvblog.com/2013/10/04/a-tutorial-on-binary-descriptors-part-3-the-orb-descriptor" target="_blank" rel="noopener">Gil's CV Blog</a></p>
         </div>
+      </div>
+
+      <div class="gl-panel">
+        <div class="gl-head"><b>🔬 Soi từng bước greedy — test đang xét &amp; kết quả xét</b></div>
+        <canvas id="gl-bits" width="620" height="64" style="max-width:100%"></canvas>
+        <p class="gl-canvas-cap">mỗi ô = kết quả (bit) của test này trên 1 patch huấn luyện — cam = bit 1, xám = bit 0</p>
+        <div class="gl-nums" id="gl-nums"></div>
+        <div class="gl-log" id="gl-log"></div>
       </div>`;
 
     const cv = mount.querySelector("#gr-canvas").getContext("2d");
@@ -95,6 +104,7 @@
         }
         cand.sort((x, y) => Math.abs(x.mean - 0.5) - Math.abs(y.mean - 0.5));
         ptr = 0; chosen = []; thresh = 0.9; done = false;
+        nTried = 0; nRejected = 0; lastEvent = null;
         draw();
         stats();
       });
@@ -110,16 +120,65 @@
       return cov / Math.sqrt(va * vb);
     }
 
+    let lastEvent = null, nTried = 0, nRejected = 0;
+
     function stepOnce() {
       while (ptr < cand.length) {
         const c = cand[ptr++];
-        let ok = true;
-        for (const r of chosen) { if (Math.abs(corr(c, r)) > thresh) { ok = false; break; } }
-        if (ok) { chosen.push(c); return true; }
+        nTried++;
+        let maxCorr = -1, maxIdx = -1;
+        for (let i = 0; i < chosen.length; i++) {
+          const cc = Math.abs(corr(c, chosen[i]));
+          if (cc > maxCorr) { maxCorr = cc; maxIdx = i; }
+        }
+        if (chosen.length && maxCorr > thresh) {
+          nRejected++;
+          lastEvent = { c, idx: ptr - 1, accepted: false, maxCorr, maxIdx };
+          continue;
+        }
+        chosen.push(c);
+        lastEvent = { c, idx: ptr - 1, accepted: true, maxCorr, maxIdx };
+        return true;
       }
-      if (chosen.length < N_BITS && thresh < 1.0) { thresh = Math.min(1.0, thresh + 0.04); ptr = 0; return stepOnce(); }
+      if (chosen.length < N_BITS && thresh < 1.0) {
+        thresh = Math.min(1.0, thresh + 0.04); ptr = 0;
+        lastEvent = { relax: true };
+        return stepOnce();
+      }
       done = true;
       return false;
+    }
+
+    function drawInspector() {
+      const cv = mount.querySelector("#gl-bits").getContext("2d");
+      const CW = 620, CH = 64;
+      cv.clearRect(0, 0, CW, CH);
+      const e = lastEvent;
+      const test = e && e.c ? e.c : (cand && cand[ptr] ? cand[ptr] : null);
+      const numsEl = mount.querySelector("#gl-nums"), logEl = mount.querySelector("#gl-log");
+      if (!test) {
+        numsEl.innerHTML = "<i>bấm « Chọn 1 cặp » để bắt đầu</i>";
+        logEl.innerHTML = "";
+        return;
+      }
+      const n = test.bits.length, bw = (CW - 16) / n;
+      for (let p = 0; p < n; p++) {
+        cv.fillStyle = test.bits[p] ? "#E67E22" : "#DDE5EF";
+        cv.fillRect(8 + p * bw, 16, Math.max(2, bw - 1.2), 32);
+      }
+      cv.fillStyle = "#94A3B8"; cv.font = "10px Arial"; cv.textAlign = "left";
+      cv.fillText(e ? (e.accepted ? "✔ test vừa CHỌN — thứ tự trong hàng đợi: #" + (e.idx + 1) : "✘ test vừa LOẠI — thứ tự trong hàng đợi: #" + (e.idx + 1)) : "test kế tiếp trong hàng đợi (|μ − 0.5| nhỏ nhất còn lại)", 8, 9);
+      cv.fillText("patch huấn luyện 1 → " + n, 8, CH - 8);
+      const ones = test.bits.reduce((a, b) => a + b, 0);
+      const mu = ones / n, varr = mu * (1 - mu);
+      let h = "μ = " + ones + "/" + n + " = <b>" + mu.toFixed(3) + "</b> ⇒ variance = μ·(1−μ) = <b>" + varr.toFixed(3) + "</b> <span style='color:#94A3B8'>(max 0.25 khi μ = 0.5)</span>";
+      if (e && e.c) {
+        h += e.accepted
+          ? " · corr max với R: <b>" + (e.maxIdx >= 0 ? e.maxCorr.toFixed(2) : "—") + "</b> ⇒ <b style='color:#0E9F6E'>CHỌN</b>"
+          : " · corr với test #" + (e.maxIdx + 1) + " đã chọn = <b>" + e.maxCorr.toFixed(2) + "</b> &gt; ngưỡng " + thresh.toFixed(2) + " ⇒ <b style='color:#E02424'>LOẠI</b>";
+      }
+      numsEl.innerHTML = h;
+      logEl.innerHTML = "đã xét <b>" + nTried + "</b> test: <b style='color:#0E9F6E'>" + chosen.length + " CHỌN</b> · <b style='color:#E02424'>" + nRejected + " LOẠI</b> · ngưỡng tương quan: " + thresh.toFixed(2) + (e && e.relax ? " · <b>vừa nới ngưỡng +0.04 vì cạn pool</b>" : "");
     }
 
     function draw() {
@@ -152,6 +211,7 @@
         <div class="gs"><b>${(chosen.length ? varr.toFixed(3) : "—")}</b>variance TB (max 0.25)</div>
         <div class="gs"><b>${cand ? cand.length.toLocaleString("vi") : "…"}</b>test ứng viên (demo)</div>
         <div class="gs"><b>205,590</b>test trong paper</div>`;
+      drawInspector();
     }
 
     mount.querySelector("#gr-step").onclick = () => { if (!cand || done) return; stepOnce(); draw(); stats(); };
@@ -161,7 +221,7 @@
       while (chosen.length < N_BITS && !done && guard++ < 4000) if (!stepOnce()) break;
       draw(); stats();
     };
-    mount.querySelector("#gr-reset").onclick = () => { if (cand) { ptr = 0; chosen = []; thresh = 0.9; done = false; draw(); stats(); } };
+    mount.querySelector("#gr-reset").onclick = () => { if (cand) { ptr = 0; chosen = []; thresh = 0.9; done = false; nTried = 0; nRejected = 0; lastEvent = null; draw(); stats(); } };
 
     build();
   }

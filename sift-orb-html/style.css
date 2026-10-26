@@ -288,6 +288,13 @@ code { background: #EEF3F9; border-radius: 5px; padding: 1px 6px; font-size: .92
 .ht-badge { display: inline-block; border-radius: 7px; padding: 4px 12px; font-weight: bold; font-size: 13px; color: #fff; }
 .ht-badge.bg { background: #0E9F6E; } .ht-badge.be { background: #E02424; } .ht-badge.bf { background: #94A3B8; }
 .ht-cls small { display: block; color: #64748B; font-size: 12px; margin-top: 4px; line-height: 1.45; }
+.ht-eq { margin-top: 8px; font-size: 12px; color: #334155; background: #fff; border: 1px solid #E3EAF2; border-radius: 8px; padding: 8px 10px; line-height: 1.7; font-variant-numeric: tabular-nums; }
+.ht-eq b { color: #1B5FA8; }
+.ht-eq small { color: #64748B; }
+.ha-pyr { margin-top: 14px; border: 1.5px solid #9FC2E8; background: #FBFCFE; border-radius: 12px; padding: 14px 16px; }
+.ha-pyr-head b { font-size: 14.5px; color: #1B5FA8; }
+.ha-pyr canvas { border: 1px solid #E3EAF2; border-radius: 8px; display: block; background: #fff; max-width: 100%; height: auto; }
+.lsw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin: 0 3px 0 10px; vertical-align: -1px; }
 
 /* greedy */
 .gr-cards { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
@@ -296,6 +303,12 @@ code { background: #EEF3F9; border-radius: 5px; padding: 1px 6px; font-size: .92
 .gr-stats { display: flex; gap: 14px; margin-top: 10px; flex-wrap: wrap; }
 .gr-stats .gs { background: #F4F7FA; border: 1px solid #E3EAF2; border-radius: 8px; padding: 6px 10px; font-size: 12px; color: #334155; }
 .gr-stats .gs b { display: block; font-size: 16px; color: #C05F0A; font-variant-numeric: tabular-nums; }
+.gl-panel { margin-top: 14px; border: 1.5px solid #F0C9A4; background: #FFFDF9; border-radius: 12px; padding: 12px 16px; }
+.gl-head b { font-size: 13.5px; color: #C05F0A; }
+.gl-canvas-cap { font-size: 11px; color: #94A3B8; margin-top: 2px; }
+.gl-nums { font-size: 13px; color: #0F2B46; margin-top: 8px; line-height: 1.7; font-variant-numeric: tabular-nums; }
+.gl-nums b { color: #C05F0A; }
+.gl-log { margin-top: 4px; font-size: 12.5px; color: #334155; line-height: 1.6; }
 
 /* bins */
 .bn-cards { display: flex; gap: 14px; align-items: flex-start; margin-top: 8px; flex-wrap: wrap; }
@@ -361,3 +374,19 @@ code { background: #EEF3F9; border-radius: 5px; padding: 1px 6px; font-size: .92
   .or-panels { flex-direction: column; }
   .grd-mats { grid-template-columns: repeat(2, auto); }
 }
+
+/* ---------- Harris & Canny pages (mở rộng, không đụng rule cũ) ---------- */
+.chip.g { border-color: #0E9F6E; }
+.mega.c-green { color: #7ED8B8; }
+.callout.green { background: #EAF7F1; border: 1px solid #0E9F6E; color: #0F2B46; }
+.callout.green b { color: #0B7A57; }
+.deriv-box.green { border-color: #0E9F6E; background: #F1FAF6; }
+.deriv-box.green .dv-n { background: #0E9F6E; }
+.deriv-box.green .dv-math { color: #0B7A57; }
+.deriv-box.green .dv-step { border-bottom-color: #CBE9DC; }
+.sec-head.dark-band.green-band { background: #0F2E27; }
+.cmp th.h-canny { background: #0B7A57; }
+.widget > canvas { border: 1px solid #D8E3F0; border-radius: 8px; background: #fff; }
+/* legend chứa đoạn văn dài: inline flow thay vì flex (tránh tách câu thành các flex item) */
+.ha-legend { display: block; line-height: 1.75; }
+.ha-legend .sw { margin: 0 4px 0 2px; vertical-align: -2px; }
